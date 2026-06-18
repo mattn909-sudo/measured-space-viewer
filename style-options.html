@@ -1,0 +1,820 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Measured Space Viewer Style Options</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page-bg: #f4f5f7;
+      --ink: #18202a;
+      --muted: #65707d;
+      --line: rgba(24, 32, 42, 0.14);
+      --photo: url("214vannorden_measuredspace/33EW3SD1OLUW.png");
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+      margin: 0;
+    }
+
+    body {
+      background: var(--page-bg);
+      color: var(--ink);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.4;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    .page {
+      width: min(1480px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 30px 0 44px;
+    }
+
+    .intro {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 22px;
+    }
+
+    .intro h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .intro p {
+      max-width: 720px;
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .legend span {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 6px 8px;
+      background: #fff;
+    }
+
+    .options {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 22px;
+    }
+
+    .option {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 18px 45px rgba(36, 44, 54, 0.08);
+    }
+
+    .option-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .option-title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .option-note {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .viewer {
+      --ui-font: Arial, Helvetica, sans-serif;
+      --ui-radius: 4px;
+      --ui-bg: rgba(255, 255, 255, 0.96);
+      --ui-bg-strong: #fff;
+      --ui-text: #222;
+      --ui-muted: #666;
+      --ui-line: rgba(0, 0, 0, 0.18);
+      --ui-action: #0388cc;
+      --ui-action-text: #fff;
+      --address-bg: rgba(55, 55, 55, 0.72);
+      --address-text: #fff;
+      --map-bg: #fff;
+      --wall: #171717;
+      --floor-fill: #fbfbfb;
+      --hotspot: #0388cc;
+      --chip-bg: #f7f7f7;
+      --chip-text: #333;
+      --shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
+      position: relative;
+      height: 520px;
+      overflow: hidden;
+      background:
+        linear-gradient(rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.12)),
+        var(--photo) center / cover;
+      font-family: var(--ui-font);
+    }
+
+    .viewer::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(180deg, rgba(0, 0, 0, 0.28), transparent 38%, rgba(0, 0, 0, 0.24));
+      pointer-events: none;
+    }
+
+    .address-pill {
+      position: absolute;
+      z-index: 3;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      min-width: min(540px, calc(100% - 130px));
+      max-width: calc(100% - 96px);
+      padding: 14px 26px 16px;
+      border-radius: 0 0 22px 22px;
+      background: var(--address-bg);
+      color: var(--address-text);
+      text-align: center;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0;
+      box-shadow: var(--shadow);
+    }
+
+    .brand-mark {
+      position: absolute;
+      z-index: 3;
+      top: 16px;
+      left: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--address-text);
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .brand-dot {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--ui-action);
+      box-shadow: inset 0 0 0 6px rgba(255, 255, 255, 0.88);
+    }
+
+    .top-actions {
+      position: absolute;
+      z-index: 3;
+      top: 14px;
+      right: 14px;
+      display: flex;
+      gap: 8px;
+    }
+
+    .icon-btn {
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border: 1px solid var(--ui-line);
+      border-radius: var(--ui-radius);
+      background: var(--ui-bg);
+      color: var(--ui-text);
+      box-shadow: var(--shadow);
+      cursor: default;
+    }
+
+    .icon-btn svg {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      stroke-width: 2;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .map-panel {
+      position: absolute;
+      z-index: 3;
+      left: 16px;
+      bottom: 78px;
+      width: 260px;
+      background: var(--map-bg);
+      color: var(--ui-text);
+      border: 1px solid var(--ui-line);
+      border-radius: var(--ui-radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .map-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--ui-line);
+      background: var(--ui-bg-strong);
+    }
+
+    .map-title {
+      margin: 0;
+      color: var(--ui-text);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .floor-select {
+      border: 1px solid var(--ui-line);
+      border-radius: var(--ui-radius);
+      background: var(--chip-bg);
+      color: var(--chip-text);
+      padding: 5px 8px;
+      font-size: 12px;
+    }
+
+    .floorplan {
+      position: relative;
+      height: 168px;
+      padding: 12px;
+      background:
+        linear-gradient(90deg, rgba(0, 0, 0, 0.035) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(0, 0, 0, 0.035) 1px, transparent 1px),
+        var(--floor-fill);
+      background-size: 18px 18px;
+    }
+
+    .floorplan svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .floorplan .wall {
+      fill: none;
+      stroke: var(--wall);
+      stroke-width: 6;
+      stroke-linejoin: round;
+    }
+
+    .floorplan .thin {
+      stroke-width: 3;
+    }
+
+    .floorplan .window {
+      stroke: #4fb0e2;
+      stroke-width: 5;
+    }
+
+    .hotspot {
+      fill: var(--hotspot);
+      stroke: #fff;
+      stroke-width: 3;
+    }
+
+    .room-label {
+      fill: var(--ui-muted);
+      font: 700 8px var(--ui-font);
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .street-label {
+      position: absolute;
+      z-index: 3;
+      right: 16px;
+      bottom: 86px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      max-width: 300px;
+      padding: 10px 12px;
+      border: 1px solid var(--ui-line);
+      border-radius: var(--ui-radius);
+      background: var(--ui-bg);
+      color: var(--ui-text);
+      box-shadow: var(--shadow);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .street-label svg {
+      width: 18px;
+      min-width: 18px;
+      height: 18px;
+      stroke: var(--ui-action);
+      stroke-width: 2;
+      fill: none;
+    }
+
+    .bottom-bar {
+      position: absolute;
+      z-index: 3;
+      left: 16px;
+      right: 16px;
+      bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 46px;
+      padding: 8px;
+      border: 1px solid var(--ui-line);
+      border-radius: var(--ui-radius);
+      background: var(--ui-bg);
+      color: var(--ui-text);
+      box-shadow: var(--shadow);
+    }
+
+    .tabs,
+    .tools {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .tab,
+    .tool {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 32px;
+      min-width: 36px;
+      padding: 0 12px;
+      border: 1px solid transparent;
+      border-radius: var(--ui-radius);
+      background: transparent;
+      color: var(--ui-text);
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .tab.active,
+    .tool.primary {
+      border-color: var(--ui-action);
+      background: var(--ui-action);
+      color: var(--ui-action-text);
+    }
+
+    .tool {
+      padding: 0;
+      width: 34px;
+    }
+
+    .tool svg {
+      width: 17px;
+      height: 17px;
+      stroke: currentColor;
+      stroke-width: 2;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .measurement-strip {
+      position: absolute;
+      z-index: 3;
+      left: 292px;
+      bottom: 86px;
+      display: flex;
+      gap: 6px;
+    }
+
+    .chip {
+      padding: 7px 9px;
+      border: 1px solid var(--ui-line);
+      border-radius: var(--ui-radius);
+      background: var(--chip-bg);
+      color: var(--chip-text);
+      box-shadow: var(--shadow);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .style-current {
+      --ui-font: Arial, Helvetica, sans-serif;
+      --ui-radius: 4px;
+      --ui-bg: rgba(255, 255, 255, 0.94);
+      --ui-bg-strong: #fff;
+      --ui-text: #222;
+      --ui-muted: #777;
+      --ui-line: rgba(0, 0, 0, 0.22);
+      --ui-action: #0388cc;
+      --ui-action-text: #fff;
+      --address-bg: rgba(74, 74, 74, 0.78);
+      --address-text: #fff;
+      --map-bg: #fff;
+      --floor-fill: #fff;
+      --wall: #000;
+      --hotspot: #0388cc;
+      --chip-bg: #f5f5f5;
+      --chip-text: #333;
+      --shadow: 0 2px 8px rgba(0, 0, 0, 0.24);
+    }
+
+    .style-slate {
+      --ui-font: Inter, "Segoe UI", Arial, sans-serif;
+      --ui-radius: 8px;
+      --ui-bg: rgba(14, 19, 24, 0.82);
+      --ui-bg-strong: rgba(20, 27, 34, 0.92);
+      --ui-text: #eef4f8;
+      --ui-muted: #9aa9b5;
+      --ui-line: rgba(255, 255, 255, 0.14);
+      --ui-action: #41b7d8;
+      --ui-action-text: #061016;
+      --address-bg: rgba(9, 13, 17, 0.82);
+      --address-text: #f8fbfc;
+      --map-bg: rgba(13, 18, 23, 0.88);
+      --floor-fill: #101820;
+      --wall: #e8f3f7;
+      --hotspot: #41b7d8;
+      --chip-bg: rgba(255, 255, 255, 0.08);
+      --chip-text: #edf5f8;
+      --shadow: 0 18px 42px rgba(0, 0, 0, 0.38);
+    }
+
+    .style-slate .viewer::before {
+      background:
+        linear-gradient(180deg, rgba(0, 0, 0, 0.46), transparent 42%, rgba(0, 0, 0, 0.48)),
+        rgba(6, 9, 12, 0.12);
+    }
+
+    .style-slate .floorplan {
+      background:
+        linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+        var(--floor-fill);
+      background-size: 18px 18px;
+    }
+
+    .style-clean {
+      --ui-font: "Aptos", "Segoe UI", Arial, sans-serif;
+      --ui-radius: 6px;
+      --ui-bg: rgba(255, 255, 255, 0.96);
+      --ui-bg-strong: #fff;
+      --ui-text: #24313d;
+      --ui-muted: #6d7883;
+      --ui-line: rgba(33, 47, 61, 0.14);
+      --ui-action: #0b7a75;
+      --ui-action-text: #fff;
+      --address-bg: rgba(255, 255, 255, 0.92);
+      --address-text: #24313d;
+      --map-bg: #fbfcfc;
+      --floor-fill: #f7faf9;
+      --wall: #20282f;
+      --hotspot: #0b7a75;
+      --chip-bg: #edf7f5;
+      --chip-text: #164944;
+      --shadow: 0 12px 30px rgba(20, 34, 45, 0.16);
+    }
+
+    .style-clean .address-pill {
+      top: 14px;
+      border: 1px solid var(--ui-line);
+      border-radius: 6px;
+      font-size: 16px;
+      padding: 12px 22px;
+    }
+
+    .style-warm {
+      --ui-font: "Nunito Sans", "Segoe UI", Arial, sans-serif;
+      --ui-radius: 8px;
+      --ui-bg: rgba(255, 252, 247, 0.95);
+      --ui-bg-strong: #fffaf2;
+      --ui-text: #2b2f31;
+      --ui-muted: #6f7270;
+      --ui-line: rgba(43, 47, 49, 0.16);
+      --ui-action: #b64f3b;
+      --ui-action-text: #fff;
+      --address-bg: rgba(43, 47, 49, 0.88);
+      --address-text: #fffaf2;
+      --map-bg: #fffaf2;
+      --floor-fill: #fffdf8;
+      --wall: #2b2f31;
+      --hotspot: #b64f3b;
+      --chip-bg: #f4ebe0;
+      --chip-text: #4a3b32;
+      --shadow: 0 14px 34px rgba(50, 42, 34, 0.18);
+    }
+
+    .style-warm .address-pill {
+      top: 12px;
+      border-radius: 8px;
+      font-size: 17px;
+    }
+
+    .style-warm .map-panel,
+    .style-warm .bottom-bar,
+    .style-warm .street-label,
+    .style-warm .icon-btn,
+    .style-warm .chip {
+      border-color: rgba(96, 70, 52, 0.18);
+    }
+
+    @media (max-width: 1100px) {
+      .options {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .page {
+        width: min(100% - 20px, 1480px);
+        padding-top: 18px;
+      }
+
+      .intro {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .legend {
+        justify-content: flex-start;
+      }
+
+      .viewer {
+        height: 600px;
+      }
+
+      .address-pill {
+        top: 10px;
+        max-width: calc(100% - 24px);
+        min-width: 0;
+        width: calc(100% - 100px);
+        padding: 11px 14px;
+        font-size: 14px;
+      }
+
+      .brand-mark span {
+        display: none;
+      }
+
+      .map-panel {
+        left: 12px;
+        right: 12px;
+        bottom: 124px;
+        width: auto;
+      }
+
+      .measurement-strip {
+        left: 12px;
+        bottom: 84px;
+      }
+
+      .street-label {
+        right: 12px;
+        bottom: 84px;
+        max-width: calc(100% - 174px);
+        font-size: 12px;
+      }
+
+      .bottom-bar {
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .tabs,
+      .tools {
+        width: 100%;
+        justify-content: space-between;
+      }
+
+      .tab {
+        flex: 1;
+        padding: 0 6px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="intro">
+      <div>
+        <h1>Viewer Style Options</h1>
+        <p>Reference board for the 214 Van Norden tour UI: address label, map/floorplan, street label, room chips, and core viewer controls.</p>
+      </div>
+      <div class="legend" aria-label="Compared elements">
+        <span>Font</span>
+        <span>Address</span>
+        <span>Map</span>
+        <span>Controls</span>
+      </div>
+    </header>
+
+    <section class="options" aria-label="Style options">
+      <article class="option style-current">
+        <div class="option-head">
+          <h2 class="option-title">Option 1: Current Export</h2>
+          <span class="option-note">Bootstrap / Helvetica / blue</span>
+        </div>
+        <div class="viewer">
+          <div class="brand-mark"><span class="brand-dot"></span><span>measured-space</span></div>
+          <div class="address-pill">214 Van Norden Rd, Reading, MA</div>
+          <div class="top-actions">
+            <button class="icon-btn" aria-label="Share"><svg viewBox="0 0 24 24"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v14"/></svg></button>
+            <button class="icon-btn" aria-label="Fullscreen"><svg viewBox="0 0 24 24"><path d="M8 3H3v5"/><path d="M16 3h5v5"/><path d="M8 21H3v-5"/><path d="M16 21h5v-5"/></svg></button>
+          </div>
+          <div class="map-panel">
+            <div class="map-head">
+              <h3 class="map-title">Floor Plan</h3>
+              <span class="floor-select">2nd Floor</span>
+            </div>
+            <div class="floorplan">__FLOORPLAN__</div>
+          </div>
+          <div class="measurement-strip">
+            <span class="chip">Garage</span>
+            <span class="chip">214 ft</span>
+          </div>
+          <div class="street-label"><svg viewBox="0 0 24 24"><path d="M12 21s7-6.4 7-12A7 7 0 0 0 5 9c0 5.6 7 12 7 12Z"/><circle cx="12" cy="9" r="2.5"/></svg>Van Norden Rd</div>
+          <div class="bottom-bar">
+            <div class="tabs">
+              <span class="tab active">3D Tour</span>
+              <span class="tab">Floor Plan</span>
+              <span class="tab">Photos</span>
+            </div>
+            <div class="tools">__TOOLS__</div>
+          </div>
+        </div>
+      </article>
+
+      <article class="option style-slate">
+        <div class="option-head">
+          <h2 class="option-title">Option 2: Immersive Slate</h2>
+          <span class="option-note">Modern dark controls</span>
+        </div>
+        <div class="viewer">
+          <div class="brand-mark"><span class="brand-dot"></span><span>measured-space</span></div>
+          <div class="address-pill">214 Van Norden Rd, Reading, MA</div>
+          <div class="top-actions">
+            <button class="icon-btn" aria-label="Share"><svg viewBox="0 0 24 24"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v14"/></svg></button>
+            <button class="icon-btn" aria-label="Fullscreen"><svg viewBox="0 0 24 24"><path d="M8 3H3v5"/><path d="M16 3h5v5"/><path d="M8 21H3v-5"/><path d="M16 21h5v-5"/></svg></button>
+          </div>
+          <div class="map-panel">
+            <div class="map-head">
+              <h3 class="map-title">Floor Plan</h3>
+              <span class="floor-select">2nd Floor</span>
+            </div>
+            <div class="floorplan">__FLOORPLAN__</div>
+          </div>
+          <div class="measurement-strip">
+            <span class="chip">Garage</span>
+            <span class="chip">214 ft</span>
+          </div>
+          <div class="street-label"><svg viewBox="0 0 24 24"><path d="M12 21s7-6.4 7-12A7 7 0 0 0 5 9c0 5.6 7 12 7 12Z"/><circle cx="12" cy="9" r="2.5"/></svg>Van Norden Rd</div>
+          <div class="bottom-bar">
+            <div class="tabs">
+              <span class="tab active">3D Tour</span>
+              <span class="tab">Floor Plan</span>
+              <span class="tab">Photos</span>
+            </div>
+            <div class="tools">__TOOLS__</div>
+          </div>
+        </div>
+      </article>
+
+      <article class="option style-clean">
+        <div class="option-head">
+          <h2 class="option-title">Option 3: Clean Survey</h2>
+          <span class="option-note">Light professional UI</span>
+        </div>
+        <div class="viewer">
+          <div class="brand-mark"><span class="brand-dot"></span><span>measured-space</span></div>
+          <div class="address-pill">214 Van Norden Rd, Reading, MA</div>
+          <div class="top-actions">
+            <button class="icon-btn" aria-label="Share"><svg viewBox="0 0 24 24"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v14"/></svg></button>
+            <button class="icon-btn" aria-label="Fullscreen"><svg viewBox="0 0 24 24"><path d="M8 3H3v5"/><path d="M16 3h5v5"/><path d="M8 21H3v-5"/><path d="M16 21h5v-5"/></svg></button>
+          </div>
+          <div class="map-panel">
+            <div class="map-head">
+              <h3 class="map-title">Floor Plan</h3>
+              <span class="floor-select">2nd Floor</span>
+            </div>
+            <div class="floorplan">__FLOORPLAN__</div>
+          </div>
+          <div class="measurement-strip">
+            <span class="chip">Garage</span>
+            <span class="chip">214 ft</span>
+          </div>
+          <div class="street-label"><svg viewBox="0 0 24 24"><path d="M12 21s7-6.4 7-12A7 7 0 0 0 5 9c0 5.6 7 12 7 12Z"/><circle cx="12" cy="9" r="2.5"/></svg>Van Norden Rd</div>
+          <div class="bottom-bar">
+            <div class="tabs">
+              <span class="tab active">3D Tour</span>
+              <span class="tab">Floor Plan</span>
+              <span class="tab">Photos</span>
+            </div>
+            <div class="tools">__TOOLS__</div>
+          </div>
+        </div>
+      </article>
+
+      <article class="option style-warm">
+        <div class="option-head">
+          <h2 class="option-title">Option 4: Warm Residential</h2>
+          <span class="option-note">Softer home-buyer feel</span>
+        </div>
+        <div class="viewer">
+          <div class="brand-mark"><span class="brand-dot"></span><span>measured-space</span></div>
+          <div class="address-pill">214 Van Norden Rd, Reading, MA</div>
+          <div class="top-actions">
+            <button class="icon-btn" aria-label="Share"><svg viewBox="0 0 24 24"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v14"/></svg></button>
+            <button class="icon-btn" aria-label="Fullscreen"><svg viewBox="0 0 24 24"><path d="M8 3H3v5"/><path d="M16 3h5v5"/><path d="M8 21H3v-5"/><path d="M16 21h5v-5"/></svg></button>
+          </div>
+          <div class="map-panel">
+            <div class="map-head">
+              <h3 class="map-title">Floor Plan</h3>
+              <span class="floor-select">2nd Floor</span>
+            </div>
+            <div class="floorplan">__FLOORPLAN__</div>
+          </div>
+          <div class="measurement-strip">
+            <span class="chip">Garage</span>
+            <span class="chip">214 ft</span>
+          </div>
+          <div class="street-label"><svg viewBox="0 0 24 24"><path d="M12 21s7-6.4 7-12A7 7 0 0 0 5 9c0 5.6 7 12 7 12Z"/><circle cx="12" cy="9" r="2.5"/></svg>Van Norden Rd</div>
+          <div class="bottom-bar">
+            <div class="tabs">
+              <span class="tab active">3D Tour</span>
+              <span class="tab">Floor Plan</span>
+              <span class="tab">Photos</span>
+            </div>
+            <div class="tools">__TOOLS__</div>
+          </div>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <template id="floorplan-template">
+    <svg viewBox="0 0 220 140" aria-hidden="true">
+      <path class="wall" d="M18 18h118v31h64v73H18Z"/>
+      <path class="wall thin" d="M76 18v104M18 78h118M136 49v73M76 49h60"/>
+      <path class="window" d="M39 18h34M156 122h28"/>
+      <circle class="hotspot" cx="46" cy="51" r="8"/>
+      <circle class="hotspot" cx="105" cy="100" r="8"/>
+      <circle class="hotspot" cx="168" cy="82" r="8"/>
+      <text class="room-label" x="34" y="102">Garage</text>
+      <text class="room-label" x="88" y="42">Kitchen</text>
+      <text class="room-label" x="149" y="70">Adu</text>
+    </svg>
+  </template>
+
+  <template id="tools-template">
+    <span class="tool primary" aria-label="Move"><svg viewBox="0 0 24 24"><path d="M12 2v20"/><path d="M2 12h20"/><path d="M18 6l-6-4-6 4"/><path d="M18 18l-6 4-6-4"/></svg></span>
+    <span class="tool" aria-label="Rotate"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg></span>
+    <span class="tool" aria-label="Measure"><svg viewBox="0 0 24 24"><path d="M4 18 18 4l2 2L6 20Z"/><path d="m7 15 2 2"/><path d="m10 12 2 2"/><path d="m13 9 2 2"/></svg></span>
+    <span class="tool" aria-label="Zoom"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/><path d="M11 8v6"/><path d="M8 11h6"/></svg></span>
+  </template>
+
+  <script>
+    const floorplan = document.querySelector("#floorplan-template").innerHTML;
+    const tools = document.querySelector("#tools-template").innerHTML;
+
+    document.querySelectorAll(".floorplan").forEach((node) => {
+      node.innerHTML = floorplan;
+    });
+
+    document.querySelectorAll(".tools").forEach((node) => {
+      node.innerHTML = tools;
+    });
+  </script>
+</body>
+</html>
