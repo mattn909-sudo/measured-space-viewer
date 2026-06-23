@@ -8,12 +8,34 @@
   </head>
   <body>
     <main class="app-shell">
-      <section class="upload-panel" aria-labelledby="app-title">
+      <section class="hero-panel" aria-labelledby="app-title">
         <div class="brand-row">
           <span class="brand-mark" aria-hidden="true"></span>
           <div>
             <h1 id="app-title">Measured Space Viewer</h1>
-            <p>Open a zipped virtual tour directly in your browser.</p>
+            <p>Open published cloud tours or unpack a local ZIP directly in your browser.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="cloud-panel" aria-labelledby="cloud-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="cloud-title">Cloud tours</h2>
+            <p>Published tours open from immutable hosted revisions.</p>
+          </div>
+          <button id="refresh-cloud-tours" class="secondary-button" type="button">Refresh</button>
+        </div>
+
+        <div id="cloud-tour-status" class="cloud-status" aria-live="polite">Loading cloud tours...</div>
+        <div id="cloud-tour-list" class="tour-grid" aria-live="polite"></div>
+      </section>
+
+      <section class="upload-panel" aria-labelledby="local-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="local-title">Open ZIP locally</h2>
+            <p>Unpack a tour export on this device without uploading it.</p>
           </div>
         </div>
 

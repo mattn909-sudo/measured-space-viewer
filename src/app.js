@@ -14,11 +14,20 @@ const fileName = document.querySelector("#file-name");
 const processButton = document.querySelector("#process-button");
 const progressFill = document.querySelector("#progress-fill");
 const statusText = document.querySelector("#status-text");
+const cloudTourList = document.querySelector("#cloud-tour-list");
+const cloudTourStatus = document.querySelector("#cloud-tour-status");
+const refreshCloudToursButton = document.querySelector("#refresh-cloud-tours");
 const appBaseUrl = new URL("./", window.location.href);
 let selectedFile = null;
 let activeTourTab = null;
+let prefetchedCloudTourUrl = "";
 
 prepareServiceWorker().catch((error) => setStatus(error.message, "error"));
+loadCloudTours().catch((error) => renderCloudTourError(error.message));
+
+refreshCloudToursButton.addEventListener("click", () => {
+  loadCloudTours().catch((error) => renderCloudTourError(error.message));
+});
 
 fileInput.addEventListener("change", () => {
   selectFile(fileInput.files[0]);
@@ -65,6 +74,209 @@ form.addEventListener("submit", async (event) => {
   activeTourTab = tourTab;
   await openTour(file, tourTab);
 });
+
+async function loadCloudTours() {
+  performance.mark("cloud-catalog:start");
+  cloudTourStatus.textContent = "Loading cloud tours...";
+  cloudTourStatus.classList.remove("is-error");
+  cloudTourList.replaceChildren();
+  refreshCloudToursButton.disabled = true;
+
+  try {
+    const response = await fetch(new URL("tours.json", appBaseUrl), {
+      cache: "no-cache",
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) {
+      throw new Error(`Catalog request failed (${response.status}).`);
+    }
+
+    const rawTours = await response.json();
+    if (!Array.isArray(rawTours)) {
+      throw new Error("Catalog must be a JSON array.");
+    }
+
+    performance.mark("cloud-catalog:fetched");
+    const tours = rawTours.map(validateCloudTour).filter(Boolean);
+    renderCloudTours(tours);
+    performance.mark("cloud-catalog:rendered");
+    performance.measure("cloud-catalog:fetch", "cloud-catalog:start", "cloud-catalog:fetched");
+    performance.measure("cloud-catalog:render", "cloud-catalog:fetched", "cloud-catalog:rendered");
+    console.info("Cloud catalog loaded", {
+      totalEntries: rawTours.length,
+      renderedEntries: tours.length,
+      measures: performance
+        .getEntriesByType("measure")
+        .filter((entry) => entry.name.startsWith("cloud-catalog:"))
+        .slice(-2)
+        .map((entry) => ({ name: entry.name, durationMs: Math.round(entry.duration) })),
+    });
+  } finally {
+    refreshCloudToursButton.disabled = false;
+  }
+}
+
+function validateCloudTour(rawTour) {
+  if (!rawTour || typeof rawTour !== "object" || rawTour.status !== "published") {
+    return null;
+  }
+
+  const id = cleanRequiredString(rawTour.id);
+  const slug = cleanRequiredString(rawTour.slug);
+  const title = cleanRequiredString(rawTour.title);
+  const indexUrl = cleanUrl(rawTour.indexUrl);
+  if (!id || !slug || !title || !indexUrl) {
+    return null;
+  }
+
+  const assetBaseUrl = cleanUrl(rawTour.assetBaseUrl);
+  const coverImage = cleanUrl(rawTour.coverImage);
+  const sizeBytes = Number(rawTour.sizeBytes);
+  const fileCount = Number(rawTour.fileCount);
+
+  return {
+    id,
+    slug,
+    revisionId: cleanOptionalString(rawTour.revisionId),
+    title,
+    address: cleanOptionalString(rawTour.address),
+    description: cleanOptionalString(rawTour.description),
+    coverImage: coverImage || "",
+    indexUrl,
+    assetBaseUrl: assetBaseUrl || "",
+    publishedAt: cleanOptionalString(rawTour.publishedAt),
+    status: "published",
+    sizeBytes: Number.isFinite(sizeBytes) && sizeBytes > 0 ? sizeBytes : 0,
+    fileCount: Number.isFinite(fileCount) && fileCount > 0 ? fileCount : 0,
+  };
+}
+
+function renderCloudTours(tours) {
+  cloudTourList.replaceChildren();
+  if (!tours.length) {
+    cloudTourStatus.textContent = "No published cloud tours are available.";
+    return;
+  }
+
+  cloudTourStatus.textContent = `${tours.length} published ${tours.length === 1 ? "tour" : "tours"}.`;
+  cloudTourList.append(...tours.map(renderCloudTourCard));
+}
+
+function renderCloudTourCard(tour) {
+  const card = document.createElement("article");
+  card.className = "tour-card";
+
+  if (tour.coverImage) {
+    const image = document.createElement("img");
+    image.className = "tour-cover";
+    image.src = tour.coverImage;
+    image.alt = "";
+    image.loading = "lazy";
+    image.decoding = "async";
+    card.append(image);
+  }
+
+  const content = document.createElement("div");
+  const title = document.createElement("h3");
+  title.textContent = tour.title;
+  content.append(title);
+
+  if (tour.address) {
+    const address = document.createElement("p");
+    address.className = "tour-address";
+    address.textContent = tour.address;
+    content.append(address);
+  }
+
+  if (tour.description) {
+    const description = document.createElement("p");
+    description.textContent = tour.description;
+    content.append(description);
+  }
+
+  const meta = document.createElement("div");
+  meta.className = "tour-meta";
+  const published = formatDate(tour.publishedAt);
+  if (published) {
+    const publishedText = document.createElement("span");
+    publishedText.textContent = published;
+    meta.append(publishedText);
+  }
+  if (tour.sizeBytes > 0) {
+    const sizeText = document.createElement("span");
+    sizeText.textContent = formatBytes(tour.sizeBytes);
+    meta.append(sizeText);
+  }
+  if (tour.fileCount > 0) {
+    const countText = document.createElement("span");
+    countText.textContent = `${tour.fileCount.toLocaleString()} files`;
+    meta.append(countText);
+  }
+  if (meta.childElementCount) {
+    content.append(meta);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "tour-actions";
+
+  const openLink = document.createElement("a");
+  openLink.className = "primary-link";
+  openLink.href = tour.indexUrl;
+  openLink.target = "_blank";
+  openLink.rel = "noopener noreferrer";
+  openLink.textContent = "Open tour";
+  openLink.addEventListener("click", (event) => {
+    event.preventDefault();
+    openCloudTour(tour);
+  });
+  openLink.addEventListener("pointerenter", () => prefetchCloudTourIndex(tour));
+  openLink.addEventListener("focus", () => prefetchCloudTourIndex(tour));
+
+  const copyButton = document.createElement("button");
+  copyButton.className = "copy-button";
+  copyButton.type = "button";
+  copyButton.textContent = "Copy link";
+  copyButton.addEventListener("click", () => copyCloudTourLink(tour, copyButton));
+
+  actions.append(openLink, copyButton);
+  card.append(content, actions);
+  return card;
+}
+
+function renderCloudTourError(message) {
+  cloudTourList.replaceChildren();
+  cloudTourStatus.textContent = message || "Cloud tours could not be loaded.";
+  cloudTourStatus.classList.add("is-error");
+}
+
+function openCloudTour(tour) {
+  window.open(tour.indexUrl, "_blank", "noopener,noreferrer");
+}
+
+async function copyCloudTourLink(tour, button) {
+  const originalText = button.textContent;
+  try {
+    await navigator.clipboard.writeText(tour.indexUrl);
+    button.textContent = "Copied";
+  } catch {
+    button.textContent = "Copy failed";
+  }
+  window.setTimeout(() => {
+    button.textContent = originalText;
+  }, 1800);
+}
+
+function prefetchCloudTourIndex(tour) {
+  if (tour.indexUrl === prefetchedCloudTourUrl) {
+    return;
+  }
+  prefetchedCloudTourUrl = tour.indexUrl;
+  const link = document.createElement("link");
+  link.rel = "prefetch";
+  link.href = tour.indexUrl;
+  link.as = "document";
+  document.head.append(link);
+}
 
 async function openTour(file, tourTab) {
   setBusy(true);
@@ -432,7 +644,34 @@ function getMimeType(filePath) {
   })[extension] || "application/octet-stream";
 }
 
+function cleanRequiredString(value) {
+  const cleaned = cleanOptionalString(value);
+  return cleaned || "";
+}
+
+function cleanOptionalString(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function cleanUrl(value) {
+  const rawValue = cleanOptionalString(value);
+  if (!rawValue) {
+    return "";
+  }
+
+  try {
+    const url = new URL(rawValue, window.location.href);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
 function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+
   const units = ["B", "KB", "MB", "GB"];
   let value = bytes;
   let unitIndex = 0;
@@ -441,4 +680,17 @@ function formatBytes(bytes) {
     unitIndex += 1;
   }
   return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function formatDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(date);
 }

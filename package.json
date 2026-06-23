@@ -6,7 +6,15 @@
   "scripts": {
     "build": "esbuild src/app.js --bundle --format=esm --minify --outfile=public/app.js",
     "start": "node server.mjs",
-    "check": "npm run build && node --check server.mjs && node --check public/service-worker.js"
+    "check": "npm run build && node --check server.mjs && node --check public/service-worker.js && node --check scripts/prepare-tour.mjs && node --check scripts/build-tour-catalog.mjs && node --check scripts/publish-tour-r2.mjs && node --check scripts/check-hosted-tour.mjs && node --check scripts/validate-tour-catalog.mjs && node --check scripts/production-check.mjs && node --check scripts/release-tour.mjs && npm run validate-catalog -- --allow-example",
+    "prepare-tour": "node scripts/prepare-tour.mjs",
+    "build-tour-catalog": "node scripts/build-tour-catalog.mjs",
+    "publish-tour-r2": "node scripts/publish-tour-r2.mjs",
+    "check-hosted-tour": "node scripts/check-hosted-tour.mjs",
+    "validate-catalog": "node scripts/validate-tour-catalog.mjs public/tours.json",
+    "production-check": "node scripts/production-check.mjs",
+    "release-tour": "node scripts/release-tour.mjs",
+    "deploy:pages": "npm run check && npm run production-check && npx wrangler pages deploy public"
   },
   "repository": {
     "type": "git",

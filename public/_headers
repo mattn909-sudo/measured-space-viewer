@@ -1,0 +1,26 @@
+# Cloudflare Pages headers for the viewer shell.
+# The public catalog changes whenever a new immutable R2 revision is promoted,
+# so keep it short-cache/revalidate-friendly.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+
+/tours.json
+  Cache-Control: public, max-age=60, stale-while-revalidate=300
+
+# App shell assets are not content-hashed in this MVP, so use a moderate TTL.
+/app.js
+  Cache-Control: public, max-age=3600, must-revalidate
+
+/styles.css
+  Cache-Control: public, max-age=3600, must-revalidate
+
+/service-worker.js
+  Cache-Control: public, max-age=300, must-revalidate
+
+# Immutable tour revision files live in R2 behind the production custom domain,
+# for example https://tours.example.com/tours/<slug>/<revisionId>/...
+# Configure R2/cache rules for those versioned paths with:
+# Cache-Control: public, max-age=31536000, immutable
+# Do not give the non-versioned catalog/latest pointers immutable caching.

@@ -8,6 +8,7 @@
   --accent: #0f766e;
   --accent-dark: #0b5f59;
   --accent-soft: #dff5f1;
+  --blue: #2d6f9f;
   --danger: #b42318;
   --shadow: 0 18px 50px rgba(23, 32, 38, 0.12);
 }
@@ -30,17 +31,34 @@ input {
 }
 
 .app-shell {
+  display: grid;
+  gap: 28px;
+  width: min(1160px, 100%);
   min-height: 100vh;
+  margin: 0 auto;
+  padding: 28px clamp(18px, 4vw, 56px) 44px;
 }
 
+.hero-panel,
+.cloud-panel,
 .upload-panel {
   display: flex;
   flex-direction: column;
-  gap: 22px;
   width: 100%;
-  min-height: 100vh;
-  padding: 28px clamp(20px, 4vw, 56px);
+  border: 1px solid rgba(216, 224, 229, 0.9);
+  border-radius: 8px;
   background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.hero-panel {
+  padding: 24px;
+}
+
+.cloud-panel,
+.upload-panel {
+  gap: 22px;
+  padding: 24px;
 }
 
 .brand-row {
@@ -67,15 +85,93 @@ h1 {
   letter-spacing: 0;
 }
 
+h2 {
+  margin: 0 0 4px;
+  font-size: 1.18rem;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
 p {
   margin: 0;
   color: var(--muted);
   line-height: 1.45;
 }
 
+.section-heading {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.cloud-status {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.cloud-status.is-error {
+  color: var(--danger);
+}
+
+.tour-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.tour-card {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfc;
+}
+
+.tour-cover {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #e3e9ec;
+}
+
+.tour-card h3 {
+  margin: 0 0 6px;
+  font-size: 1.05rem;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.tour-card p {
+  overflow-wrap: anywhere;
+}
+
+.tour-address {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.tour-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.tour-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .upload-form {
   display: flex;
-  flex: 1;
   flex-direction: column;
   gap: 16px;
   min-height: 0;
@@ -152,7 +248,7 @@ body.is-dragging .drop-zone {
 }
 
 button {
-  width: 100%;
+  width: auto;
   min-height: 58px;
   padding: 0 24px;
   border: 0;
@@ -165,7 +261,24 @@ button {
   transition: background 160ms ease, box-shadow 160ms ease;
 }
 
+a.primary-link {
+  display: inline-grid;
+  min-height: 48px;
+  padding: 0 18px;
+  place-items: center;
+  border-radius: 6px;
+  color: #ffffff;
+  background: var(--accent);
+  font-weight: 750;
+  text-decoration: none;
+  transition: background 160ms ease, box-shadow 160ms ease;
+}
+
 button:hover:not(:disabled) {
+  background: var(--accent-dark);
+}
+
+a.primary-link:hover {
   background: var(--accent-dark);
 }
 
@@ -179,6 +292,39 @@ button:focus-visible {
   outline: 3px solid #172026;
   outline-offset: 3px;
   box-shadow: 0 0 0 6px rgba(15, 118, 110, 0.2);
+}
+
+a.primary-link:focus-visible {
+  outline: 3px solid #172026;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px rgba(15, 118, 110, 0.2);
+}
+
+.secondary-button {
+  min-height: 42px;
+  padding: 0 16px;
+  color: var(--accent-dark);
+  background: var(--accent-soft);
+  font-size: 0.95rem;
+}
+
+.secondary-button:hover:not(:disabled) {
+  background: #c9eee7;
+}
+
+.copy-button {
+  min-height: 48px;
+  padding: 0 18px;
+  color: var(--blue);
+  background: #e5f2fb;
+}
+
+.copy-button:hover:not(:disabled) {
+  background: #d4eaf8;
+}
+
+.form-actions button {
+  width: 100%;
 }
 
 .progress-wrap {
@@ -213,8 +359,15 @@ button:focus-visible {
 }
 
 @media (max-width: 520px) {
+  .app-shell {
+    gap: 18px;
+    padding: 18px;
+  }
+
+  .hero-panel,
+  .cloud-panel,
   .upload-panel {
-    padding: 20px;
+    padding: 18px;
   }
 
   .brand-row {
@@ -228,5 +381,17 @@ button:focus-visible {
 
   .drop-zone {
     min-height: 180px;
+  }
+
+  .section-heading,
+  .tour-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .section-heading button,
+  .tour-actions button,
+  .tour-actions a {
+    width: 100%;
   }
 }
