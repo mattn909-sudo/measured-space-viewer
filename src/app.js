@@ -16,6 +16,7 @@ const progressFill = document.querySelector("#progress-fill");
 const statusText = document.querySelector("#status-text");
 const cloudTourList = document.querySelector("#cloud-tour-list");
 const cloudTourStatus = document.querySelector("#cloud-tour-status");
+const dashboardUserLabel = document.querySelector("#dashboard-user-label");
 const refreshCloudToursButton = document.querySelector("#refresh-cloud-tours");
 const appBaseUrl = new URL("./", window.location.href);
 let selectedFile = null;
@@ -77,43 +78,104 @@ form.addEventListener("submit", async (event) => {
 
 async function loadCloudTours() {
   performance.mark("cloud-catalog:start");
-  cloudTourStatus.textContent = "Loading cloud tours...";
+  cloudTourStatus.textContent = "Loading assigned tours...";
   cloudTourStatus.classList.remove("is-error");
+  dashboardUserLabel.textContent = "Checking sign-in...";
+  dashboardUserLabel.classList.add("is-muted");
   cloudTourList.replaceChildren();
   refreshCloudToursButton.disabled = true;
 
   try {
-    const response = await fetch(new URL("tours.json", appBaseUrl), {
-      cache: "no-cache",
-      headers: { Accept: "application/json" },
-    });
-    if (!response.ok) {
-      throw new Error(`Catalog request failed (${response.status}).`);
+    await loadDashboardTours();
+  } catch (error) {
+    if (isApiUnavailableError(error)) {
+      await loadFallbackCatalog();
+    } else {
+      renderCloudTourError(error.message);
     }
-
-    const rawTours = await response.json();
-    if (!Array.isArray(rawTours)) {
-      throw new Error("Catalog must be a JSON array.");
-    }
-
-    performance.mark("cloud-catalog:fetched");
-    const tours = rawTours.map(validateCloudTour).filter(Boolean);
-    renderCloudTours(tours);
-    performance.mark("cloud-catalog:rendered");
-    performance.measure("cloud-catalog:fetch", "cloud-catalog:start", "cloud-catalog:fetched");
-    performance.measure("cloud-catalog:render", "cloud-catalog:fetched", "cloud-catalog:rendered");
-    console.info("Cloud catalog loaded", {
-      totalEntries: rawTours.length,
-      renderedEntries: tours.length,
-      measures: performance
-        .getEntriesByType("measure")
-        .filter((entry) => entry.name.startsWith("cloud-catalog:"))
-        .slice(-2)
-        .map((entry) => ({ name: entry.name, durationMs: Math.round(entry.duration) })),
-    });
   } finally {
     refreshCloudToursButton.disabled = false;
   }
+}
+
+async function loadDashboardTours() {
+  const me = await fetchJson(new URL("api/me", appBaseUrl), "Identity request failed");
+  const user = validateUser(me);
+  if (!user) {
+    throw new Error("The sign-in response did not include a valid user email.");
+  }
+  renderDashboardUser(user);
+
+  const dashboard = await fetchJson(new URL("api/tours", appBaseUrl), "Assigned tours request failed");
+  const rawTours = Array.isArray(dashboard) ? dashboard : dashboard.tours;
+  if (!Array.isArray(rawTours)) {
+    throw new Error("Assigned tours response must include a tours array.");
+  }
+
+  performance.mark("cloud-catalog:fetched");
+  const tours = rawTours.map(validateCloudTour).filter(Boolean);
+  renderCloudTours(tours, {
+    emptyMessage: "No tours are assigned to this account yet.",
+    statusLabel: "assigned",
+  });
+  performance.mark("cloud-catalog:rendered");
+  measureCloudCatalog("Dashboard tours loaded", rawTours.length, tours.length);
+}
+
+async function loadFallbackCatalog() {
+  dashboardUserLabel.textContent = "Local catalog preview";
+  dashboardUserLabel.classList.add("is-muted");
+  cloudTourStatus.textContent = "Dashboard APIs are unavailable here. Showing non-production catalog preview.";
+
+  const rawTours = await fetchJson(new URL("tours.json", appBaseUrl), "Catalog request failed");
+  if (!Array.isArray(rawTours)) {
+    throw new Error("Catalog must be a JSON array.");
+  }
+
+  performance.mark("cloud-catalog:fetched");
+  const tours = rawTours.map(validateCloudTour).filter(Boolean);
+  renderCloudTours(tours, {
+    emptyMessage: "No published cloud tours are available in the local catalog.",
+    statusLabel: "preview",
+  });
+  performance.mark("cloud-catalog:rendered");
+  measureCloudCatalog("Fallback cloud catalog loaded", rawTours.length, tours.length);
+}
+
+async function fetchJson(url, label) {
+  let response;
+  try {
+    response = await fetch(url, {
+      cache: "no-cache",
+      headers: { Accept: "application/json" },
+    });
+  } catch (error) {
+    throw new ApiRequestError(`${label}.`, 0, error);
+  }
+
+  if (!response.ok) {
+    throw new ApiRequestError(`${label} (${response.status}).`, response.status);
+  }
+
+  try {
+    return await response.json();
+  } catch (error) {
+    throw new ApiRequestError(`${label}: response was not valid JSON.`, response.status, error);
+  }
+}
+
+function validateUser(rawUser) {
+  if (!rawUser || typeof rawUser !== "object") {
+    return null;
+  }
+  const email = cleanRequiredString(rawUser.email);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return null;
+  }
+  return {
+    email: email.toLowerCase(),
+    name: cleanOptionalString(rawUser.name),
+  };
 }
 
 function validateCloudTour(rawTour) {
@@ -151,15 +213,21 @@ function validateCloudTour(rawTour) {
   };
 }
 
-function renderCloudTours(tours) {
+function renderCloudTours(tours, options = {}) {
   cloudTourList.replaceChildren();
   if (!tours.length) {
-    cloudTourStatus.textContent = "No published cloud tours are available.";
+    cloudTourStatus.textContent = options.emptyMessage || "No published cloud tours are available.";
     return;
   }
 
-  cloudTourStatus.textContent = `${tours.length} published ${tours.length === 1 ? "tour" : "tours"}.`;
+  const statusLabel = options.statusLabel || "published";
+  cloudTourStatus.textContent = `${tours.length} ${statusLabel} ${tours.length === 1 ? "tour" : "tours"}.`;
   cloudTourList.append(...tours.map(renderCloudTourCard));
+}
+
+function renderDashboardUser(user) {
+  dashboardUserLabel.textContent = user.name ? `${user.name} (${user.email})` : user.email;
+  dashboardUserLabel.classList.remove("is-muted");
 }
 
 function renderCloudTourCard(tour) {
@@ -247,6 +315,46 @@ function renderCloudTourError(message) {
   cloudTourList.replaceChildren();
   cloudTourStatus.textContent = message || "Cloud tours could not be loaded.";
   cloudTourStatus.classList.add("is-error");
+}
+
+function measureCloudCatalog(label, totalEntries, renderedEntries) {
+  performance.measure("cloud-catalog:fetch", "cloud-catalog:start", "cloud-catalog:fetched");
+  performance.measure("cloud-catalog:render", "cloud-catalog:fetched", "cloud-catalog:rendered");
+  console.info(label, {
+    totalEntries,
+    renderedEntries,
+    measures: performance
+      .getEntriesByType("measure")
+      .filter((entry) => entry.name.startsWith("cloud-catalog:"))
+      .slice(-2)
+      .map((entry) => ({ name: entry.name, durationMs: Math.round(entry.duration) })),
+  });
+}
+
+function isApiUnavailableError(error) {
+  return (
+    isLocalStaticMode() &&
+    error instanceof ApiRequestError &&
+    (error.status === 0 || error.status === 404 || error.status === 405)
+  );
+}
+
+function isLocalStaticMode() {
+  return (
+    window.location.protocol === "file:" ||
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1" ||
+    window.location.hostname === "[::1]"
+  );
+}
+
+class ApiRequestError extends Error {
+  constructor(message, status, cause) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = status;
+    this.cause = cause;
+  }
 }
 
 function openCloudTour(tour) {
