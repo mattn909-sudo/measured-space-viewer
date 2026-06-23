@@ -1,4 +1,4 @@
-# Cloudflare Pages headers for the viewer shell.
+# Cloudflare Pages headers for the dashboard shell.
 # The public catalog changes whenever a new immutable R2 revision is promoted,
 # so keep it short-cache/revalidate-friendly.
 /*
@@ -15,9 +15,6 @@
 
 /styles.css
   Cache-Control: public, max-age=3600, must-revalidate
-
-/service-worker.js
-  Cache-Control: public, max-age=300, must-revalidate
 
 # Immutable tour revision files live in R2 behind the production custom domain,
 # for example https://tours.example.com/tours/<slug>/<revisionId>/...

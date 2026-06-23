@@ -15,7 +15,6 @@ async function main() {
   await requireFile("public/index.html", errors);
   await requireFile("public/app.js", errors);
   await requireFile("public/styles.css", errors);
-  await requireFile("public/service-worker.js", errors);
   await requireFile("public/tours.json", errors);
   await requireFile("public/_headers", errors);
   await requireFile("wrangler.toml", errors);
@@ -55,7 +54,6 @@ async function checkHeaders(errors) {
     "max-age=60",
     "/app.js",
     "/styles.css",
-    "/service-worker.js",
     "X-Content-Type-Options: nosniff",
     "Referrer-Policy:",
     "Permissions-Policy:",

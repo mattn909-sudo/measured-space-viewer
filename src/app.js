@@ -1,89 +1,33 @@
-import { BlobReader, BlobWriter, ZipReader, configure } from "@zip.js/zip.js";
+const GEOCODE_CACHE_KEY = "measured-space-geocode-v1";
+const GEOCODE_REQUEST_DELAY_MS = 1100;
+const DEFAULT_MAP_CENTER = [39.8283, -98.5795];
+const DEFAULT_MAP_ZOOM = 4;
 
-configure({ useWebWorkers: false });
-
-const TOUR_CACHE = "measured-space-tours-v1";
-const VIRTUAL_DIRECTORY = "__tours";
-const STORAGE_OVERHEAD_RATIO = 1.15;
-const STORAGE_RESERVE_BYTES = 128 * 1024 * 1024;
-const MAX_SINGLE_FILE_BYTES = 512 * 1024 * 1024;
-const form = document.querySelector("#upload-form");
-const fileInput = document.querySelector("#tour-file");
-const dropZone = document.querySelector("#drop-zone");
-const fileName = document.querySelector("#file-name");
-const processButton = document.querySelector("#process-button");
-const progressFill = document.querySelector("#progress-fill");
-const statusText = document.querySelector("#status-text");
-const cloudTourList = document.querySelector("#cloud-tour-list");
-const cloudTourStatus = document.querySelector("#cloud-tour-status");
-const dashboardUserLabel = document.querySelector("#dashboard-user-label");
-const refreshCloudToursButton = document.querySelector("#refresh-cloud-tours");
 const appBaseUrl = new URL("./", window.location.href);
-let selectedFile = null;
-let activeTourTab = null;
-let prefetchedCloudTourUrl = "";
+const dashboardUserLabel = document.querySelector("#dashboard-user-label");
+const cloudTourStatus = document.querySelector("#cloud-tour-status");
+const cloudTourList = document.querySelector("#cloud-tour-list");
+const refreshCloudToursButton = document.querySelector("#refresh-cloud-tours");
+const mapElement = document.querySelector("#tour-map");
+const mapStatus = document.querySelector("#map-status");
 
-prepareServiceWorker().catch((error) => setStatus(error.message, "error"));
-loadCloudTours().catch((error) => renderCloudTourError(error.message));
+let prefetchedCloudTourUrl = "";
+let dashboardTours = [];
+let map;
+let markerLayer;
+let geocodeQueue = Promise.resolve();
+let geocodeCache = readGeocodeCache();
+
+removeLegacyLocalViewer().catch(() => {});
+loadCloudTours().catch((error) => renderDashboardError(error.message));
 
 refreshCloudToursButton.addEventListener("click", () => {
-  loadCloudTours().catch((error) => renderCloudTourError(error.message));
-});
-
-fileInput.addEventListener("change", () => {
-  selectFile(fileInput.files[0]);
-});
-
-dropZone.addEventListener("dragover", (event) => {
-  event.preventDefault();
-  dropZone.classList.add("is-dragging");
-});
-
-dropZone.addEventListener("dragleave", () => {
-  dropZone.classList.remove("is-dragging");
-});
-
-document.addEventListener("dragover", (event) => {
-  event.preventDefault();
-  document.body.classList.add("is-dragging");
-});
-
-document.addEventListener("dragleave", (event) => {
-  if (!event.relatedTarget) {
-    document.body.classList.remove("is-dragging");
-  }
-});
-
-document.addEventListener("drop", (event) => {
-  event.preventDefault();
-  document.body.classList.remove("is-dragging");
-  dropZone.classList.remove("is-dragging");
-  if (event.dataTransfer.files.length) {
-    selectFile(event.dataTransfer.files[0]);
-  }
-});
-
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const file = selectedFile;
-  if (!file) {
-    setStatus("Choose a zip file first.", "error");
-    return;
-  }
-
-  const tourTab = openLoadingTab();
-  activeTourTab = tourTab;
-  await openTour(file, tourTab);
+  loadCloudTours().catch((error) => renderDashboardError(error.message));
 });
 
 async function loadCloudTours() {
   performance.mark("cloud-catalog:start");
-  cloudTourStatus.textContent = "Loading assigned tours...";
-  cloudTourStatus.classList.remove("is-error");
-  dashboardUserLabel.textContent = "Checking sign-in...";
-  dashboardUserLabel.classList.add("is-muted");
-  cloudTourList.replaceChildren();
-  refreshCloudToursButton.disabled = true;
+  setLoadingState();
 
   try {
     await loadDashboardTours();
@@ -91,11 +35,21 @@ async function loadCloudTours() {
     if (isApiUnavailableError(error)) {
       await loadFallbackCatalog();
     } else {
-      renderCloudTourError(error.message);
+      renderDashboardError(error.message);
     }
   } finally {
     refreshCloudToursButton.disabled = false;
   }
+}
+
+function setLoadingState() {
+  cloudTourStatus.textContent = "Loading assigned tours...";
+  cloudTourStatus.classList.remove("is-error");
+  dashboardUserLabel.textContent = "Checking sign-in...";
+  dashboardUserLabel.classList.add("is-muted");
+  cloudTourList.replaceChildren(renderSkeletonCard(), renderSkeletonCard(), renderSkeletonCard());
+  mapStatus.textContent = "Preparing map...";
+  refreshCloudToursButton.disabled = true;
 }
 
 async function loadDashboardTours() {
@@ -113,13 +67,14 @@ async function loadDashboardTours() {
   }
 
   performance.mark("cloud-catalog:fetched");
-  const tours = rawTours.map(validateCloudTour).filter(Boolean);
-  renderCloudTours(tours, {
+  dashboardTours = rawTours.map(validateCloudTour).filter(Boolean);
+  renderDashboardTours(dashboardTours, {
     emptyMessage: "No tours are assigned to this account yet.",
     statusLabel: "assigned",
   });
+  await renderTourMap(dashboardTours);
   performance.mark("cloud-catalog:rendered");
-  measureCloudCatalog("Dashboard tours loaded", rawTours.length, tours.length);
+  measureCloudCatalog("Dashboard tours loaded", rawTours.length, dashboardTours.length);
 }
 
 async function loadFallbackCatalog() {
@@ -133,13 +88,14 @@ async function loadFallbackCatalog() {
   }
 
   performance.mark("cloud-catalog:fetched");
-  const tours = rawTours.map(validateCloudTour).filter(Boolean);
-  renderCloudTours(tours, {
+  dashboardTours = rawTours.map(validateCloudTour).filter(Boolean);
+  renderDashboardTours(dashboardTours, {
     emptyMessage: "No published cloud tours are available in the local catalog.",
     statusLabel: "preview",
   });
+  await renderTourMap(dashboardTours);
   performance.mark("cloud-catalog:rendered");
-  measureCloudCatalog("Fallback cloud catalog loaded", rawTours.length, tours.length);
+  measureCloudCatalog("Fallback cloud catalog loaded", rawTours.length, dashboardTours.length);
 }
 
 async function fetchJson(url, label) {
@@ -195,6 +151,10 @@ function validateCloudTour(rawTour) {
   const coverImage = cleanUrl(rawTour.coverImage);
   const sizeBytes = Number(rawTour.sizeBytes);
   const fileCount = Number(rawTour.fileCount);
+  const squareFeet = normalizePositiveInteger(
+    rawTour.squareFeet ?? rawTour.sqft ?? rawTour.square_feet ?? rawTour.floorAreaSqft,
+  );
+  const locationParts = normalizeLocationParts(rawTour);
 
   return {
     id,
@@ -210,19 +170,25 @@ function validateCloudTour(rawTour) {
     status: "published",
     sizeBytes: Number.isFinite(sizeBytes) && sizeBytes > 0 ? sizeBytes : 0,
     fileCount: Number.isFinite(fileCount) && fileCount > 0 ? fileCount : 0,
+    squareFeet,
+    locationParts,
+    latitude: parseCoordinate(rawTour.latitude ?? rawTour.lat),
+    longitude: parseCoordinate(rawTour.longitude ?? rawTour.lng ?? rawTour.lon),
   };
 }
 
-function renderCloudTours(tours, options = {}) {
+function renderDashboardTours(tours, options = {}) {
   cloudTourList.replaceChildren();
+
   if (!tours.length) {
     cloudTourStatus.textContent = options.emptyMessage || "No published cloud tours are available.";
+    cloudTourList.append(renderEmptyState(options.emptyMessage));
     return;
   }
 
   const statusLabel = options.statusLabel || "published";
   cloudTourStatus.textContent = `${tours.length} ${statusLabel} ${tours.length === 1 ? "tour" : "tours"}.`;
-  cloudTourList.append(...tours.map(renderCloudTourCard));
+  cloudTourList.append(...tours.map(renderTourRow));
 }
 
 function renderDashboardUser(user) {
@@ -230,62 +196,41 @@ function renderDashboardUser(user) {
   dashboardUserLabel.classList.remove("is-muted");
 }
 
-function renderCloudTourCard(tour) {
-  const card = document.createElement("article");
-  card.className = "tour-card";
-
-  if (tour.coverImage) {
-    const image = document.createElement("img");
-    image.className = "tour-cover";
-    image.src = tour.coverImage;
-    image.alt = "";
-    image.loading = "lazy";
-    image.decoding = "async";
-    card.append(image);
-  }
+function renderTourRow(tour) {
+  const row = document.createElement("article");
+  row.className = "tour-row";
+  row.dataset.tourId = tour.id;
 
   const content = document.createElement("div");
+  content.className = "tour-row-content";
+
   const title = document.createElement("h3");
-  title.textContent = tour.title;
+  title.textContent = getStreetTitle(tour);
   content.append(title);
 
-  if (tour.address) {
-    const address = document.createElement("p");
-    address.className = "tour-address";
-    address.textContent = tour.address;
-    content.append(address);
-  }
-
-  if (tour.description) {
-    const description = document.createElement("p");
-    description.textContent = tour.description;
-    content.append(description);
-  }
+  const location = document.createElement("p");
+  location.className = "tour-location";
+  location.dataset.locationDetails = "";
+  location.textContent = formatLocationDetails(tour.locationParts);
+  content.append(location);
 
   const meta = document.createElement("div");
   meta.className = "tour-meta";
-  const published = formatDate(tour.publishedAt);
-  if (published) {
-    const publishedText = document.createElement("span");
-    publishedText.textContent = published;
-    meta.append(publishedText);
-  }
-  if (tour.sizeBytes > 0) {
-    const sizeText = document.createElement("span");
-    sizeText.textContent = formatBytes(tour.sizeBytes);
-    meta.append(sizeText);
-  }
-  if (tour.fileCount > 0) {
-    const countText = document.createElement("span");
-    countText.textContent = `${tour.fileCount.toLocaleString()} files`;
-    meta.append(countText);
-  }
-  if (meta.childElementCount) {
-    content.append(meta);
-  }
+  appendMeta(meta, "Published date", formatDate(tour.publishedAt) || "Not set");
+  appendMeta(meta, "Sq ft", tour.squareFeet ? tour.squareFeet.toLocaleString() : "Not set");
+  appendMeta(meta, "Files", tour.fileCount > 0 ? tour.fileCount.toLocaleString() : "0");
+  content.append(meta);
 
   const actions = document.createElement("div");
   actions.className = "tour-actions";
+
+  const locateButton = document.createElement("button");
+  locateButton.className = "icon-button";
+  locateButton.type = "button";
+  locateButton.title = "Focus on map";
+  locateButton.setAttribute("aria-label", `Focus ${tour.title} on the map`);
+  locateButton.textContent = "Map";
+  locateButton.addEventListener("click", () => focusTourOnMap(tour.id));
 
   const openLink = document.createElement("a");
   openLink.className = "primary-link";
@@ -306,15 +251,252 @@ function renderCloudTourCard(tour) {
   copyButton.textContent = "Copy link";
   copyButton.addEventListener("click", () => copyCloudTourLink(tour, copyButton));
 
-  actions.append(openLink, copyButton);
-  card.append(content, actions);
-  return card;
+  actions.append(openLink, locateButton, copyButton);
+  row.append(content, actions);
+  return row;
 }
 
-function renderCloudTourError(message) {
+function appendMeta(container, label, value) {
+  if (!value) {
+    return;
+  }
+
+  const item = document.createElement("span");
+  const labelElement = document.createElement("strong");
+  labelElement.textContent = `${label}:`;
+  const valueElement = document.createElement("span");
+  valueElement.textContent = value;
+  item.append(labelElement, " ", valueElement);
+  container.append(item);
+}
+
+function renderSkeletonCard() {
+  const skeleton = document.createElement("div");
+  skeleton.className = "tour-row tour-row-skeleton";
+  skeleton.setAttribute("aria-hidden", "true");
+
+  const thumb = document.createElement("span");
+  thumb.className = "skeleton skeleton-thumb";
+
+  const lines = document.createElement("span");
+  lines.className = "skeleton-lines";
+  lines.append(
+    createSkeletonLine("70%"),
+    createSkeletonLine("48%"),
+    createSkeletonLine("84%"),
+  );
+
+  skeleton.append(lines);
+  return skeleton;
+}
+
+function createSkeletonLine(width) {
+  const line = document.createElement("span");
+  line.className = "skeleton skeleton-line";
+  line.style.width = width;
+  return line;
+}
+
+function renderEmptyState(message) {
+  const empty = document.createElement("section");
+  empty.className = "empty-state";
+  const title = document.createElement("h3");
+  title.textContent = "No assigned tours";
+  const copy = document.createElement("p");
+  copy.textContent = message || "When a tour is assigned to this account, it will appear here.";
+  empty.append(title, copy);
+  return empty;
+}
+
+function renderDashboardError(message) {
+  dashboardTours = [];
   cloudTourList.replaceChildren();
   cloudTourStatus.textContent = message || "Cloud tours could not be loaded.";
   cloudTourStatus.classList.add("is-error");
+  mapStatus.textContent = "Map unavailable until tours load.";
+}
+
+async function renderTourMap(tours) {
+  if (!tours.length) {
+    resetMap();
+    mapStatus.textContent = "No assigned addresses to map.";
+    return;
+  }
+
+  if (!window.L) {
+    mapStatus.textContent = "Map library could not load. Tour list is still available.";
+    return;
+  }
+
+  const leaflet = window.L;
+  if (!map) {
+    map = leaflet.map(mapElement, {
+      scrollWheelZoom: false,
+      zoomControl: true,
+    }).setView(DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM);
+    leaflet
+      .tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      })
+      .addTo(map);
+    markerLayer = leaflet.layerGroup().addTo(map);
+  }
+
+  markerLayer.clearLayers();
+  mapStatus.textContent = "Geocoding tour addresses...";
+  const locatedTours = [];
+
+  for (const tour of tours) {
+    const location = await getTourLocation(tour);
+    if (!location) {
+      continue;
+    }
+    tour.locationParts = {
+      ...tour.locationParts,
+      ...parseLocationFromGeocodeLabel(location.label),
+    };
+    updateTourLocationDetails(tour);
+    locatedTours.push({ tour, location });
+    const marker = leaflet
+      .marker([location.latitude, location.longitude], {
+        title: tour.title,
+        alt: tour.address || tour.title,
+      })
+      .addTo(markerLayer);
+    marker.bindPopup(createMapPopup(tour, location));
+    marker.on("click", () => highlightTourRow(tour.id));
+  }
+
+  if (!locatedTours.length) {
+    map.setView(DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM);
+    mapStatus.textContent = "No tour addresses could be mapped yet.";
+    return;
+  }
+
+  const bounds = leaflet.latLngBounds(
+    locatedTours.map(({ location }) => [location.latitude, location.longitude]),
+  );
+  map.fitBounds(bounds.pad(0.22), { maxZoom: locatedTours.length === 1 ? 15 : 13 });
+  mapStatus.textContent = `${locatedTours.length} ${locatedTours.length === 1 ? "address" : "addresses"} mapped with OpenStreetMap.`;
+}
+
+async function getTourLocation(tour) {
+  if (Number.isFinite(tour.latitude) && Number.isFinite(tour.longitude)) {
+    return {
+      latitude: tour.latitude,
+      longitude: tour.longitude,
+      label: tour.address,
+      source: "catalog",
+    };
+  }
+
+  if (!tour.address) {
+    return null;
+  }
+
+  return enqueueGeocode(tour.address);
+}
+
+function enqueueGeocode(address) {
+  geocodeQueue = geocodeQueue
+    .catch(() => {})
+    .then(() => geocodeAddress(address));
+  return geocodeQueue;
+}
+
+async function geocodeAddress(address) {
+  const cacheKey = normalizeAddress(address);
+  if (geocodeCache[cacheKey]) {
+    return geocodeCache[cacheKey];
+  }
+
+  await delay(GEOCODE_REQUEST_DELAY_MS);
+  const url = new URL("https://nominatim.openstreetmap.org/search");
+  url.searchParams.set("format", "jsonv2");
+  url.searchParams.set("limit", "1");
+  url.searchParams.set("q", address);
+
+  try {
+    const response = await fetch(url, {
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const results = await response.json();
+    const first = Array.isArray(results) ? results[0] : null;
+    const latitude = Number(first?.lat);
+    const longitude = Number(first?.lon);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return null;
+    }
+    const location = {
+      latitude,
+      longitude,
+      label: cleanOptionalString(first.display_name) || address,
+      source: "nominatim",
+    };
+    geocodeCache[cacheKey] = location;
+    writeGeocodeCache(geocodeCache);
+    return location;
+  } catch {
+    return null;
+  }
+}
+
+function createMapPopup(tour, location) {
+  const popup = document.createElement("div");
+  popup.className = "map-popup";
+
+  const title = document.createElement("strong");
+  title.textContent = getStreetTitle(tour);
+
+  const address = document.createElement("span");
+  address.textContent = location.label || tour.address || "Mapped tour";
+
+  const openLink = document.createElement("a");
+  openLink.href = tour.indexUrl;
+  openLink.target = "_blank";
+  openLink.rel = "noopener noreferrer";
+  openLink.textContent = "Open tour";
+
+  popup.append(title, address, openLink);
+  return popup;
+}
+
+function focusTourOnMap(tourId) {
+  const tour = dashboardTours.find((item) => item.id === tourId);
+  if (!tour || !map || !markerLayer) {
+    return;
+  }
+
+  const marker = markerLayer
+    .getLayers()
+    .find((layer) => layer.options?.title === tour.title);
+  if (!marker) {
+    mapStatus.textContent = "This tour does not have a mapped address yet.";
+    return;
+  }
+
+  map.setView(marker.getLatLng(), 16);
+  marker.openPopup();
+  highlightTourRow(tour.id);
+}
+
+function highlightTourRow(tourId) {
+  for (const row of cloudTourList.querySelectorAll(".tour-row")) {
+    row.classList.toggle("is-selected", row.dataset.tourId === tourId);
+  }
+}
+
+function resetMap() {
+  if (markerLayer) {
+    markerLayer.clearLayers();
+  }
+  if (map) {
+    map.setView(DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM);
+  }
 }
 
 function measureCloudCatalog(label, totalEntries, renderedEntries) {
@@ -329,6 +511,16 @@ function measureCloudCatalog(label, totalEntries, renderedEntries) {
       .slice(-2)
       .map((entry) => ({ name: entry.name, durationMs: Math.round(entry.duration) })),
   });
+}
+
+async function removeLegacyLocalViewer() {
+  if ("serviceWorker" in navigator) {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map((registration) => registration.unregister()));
+  }
+  if ("caches" in window) {
+    await caches.delete("measured-space-tours-v1");
+  }
 }
 
 function isApiUnavailableError(error) {
@@ -386,370 +578,117 @@ function prefetchCloudTourIndex(tour) {
   document.head.append(link);
 }
 
-async function openTour(file, tourTab) {
-  setBusy(true);
-  setProgress(1);
-  setStatus("Reading tour archive...");
-
-  let zipReader;
-  let tourPrefix;
-
+function readGeocodeCache() {
   try {
-    await prepareServiceWorker();
-    await navigator.storage?.persist?.();
-
-    zipReader = new ZipReader(new BlobReader(file));
-    const entries = await zipReader.getEntries();
-    const viewerRoot = findViewerRoot(entries);
-    const viewerEntries = entries.filter((entry) => belongsToViewer(entry, viewerRoot));
-    const totalBytes = viewerEntries.reduce((sum, entry) => sum + (entry.uncompressedSize || 0), 0);
-    validateViewerEntries(viewerEntries, totalBytes);
-    const tourId = createTourId(file.name);
-    tourPrefix = new URL(`${VIRTUAL_DIRECTORY}/${tourId}/`, appBaseUrl);
-
-    await clearStoredTours();
-    await ensureStorageCapacity(totalBytes);
-
-    const cache = await caches.open(TOUR_CACHE);
-    let completedBytes = 0;
-
-    for (const entry of viewerEntries) {
-      if (entry.directory || shouldSkipEntry(entry.filename)) {
-        continue;
-      }
-
-      const relativePath = normalizeEntryPath(entry.filename).slice(viewerRoot.length);
-      const entrySize = entry.uncompressedSize || 0;
-      setStatus(`Unzipping ${shortName(relativePath)}...`);
-
-      const blob = await entry.getData(new BlobWriter(getMimeType(relativePath)), {
-        onprogress(loaded) {
-          updateExtractionProgress(completedBytes + loaded, totalBytes);
-        },
-      });
-
-      const fileUrl = new URL(encodePath(relativePath), tourPrefix);
-      await cache.put(
-        fileUrl,
-        new Response(blob, {
-          headers: {
-            "Cache-Control": "no-store",
-            "Content-Type": getMimeType(relativePath),
-          },
-        }),
-      );
-
-      completedBytes += entrySize;
-      updateExtractionProgress(completedBytes, totalBytes);
-    }
-
-    const tourUrl = new URL("index.html", tourPrefix);
-    const cachedIndex = await cache.match(tourUrl);
-    if (!cachedIndex) {
-      throw new Error("The tour index could not be stored.");
-    }
-
-    setProgress(100);
-    setStatus("Opening tour...");
-    if (tourTab && !tourTab.closed) {
-      tourTab.location.replace(tourUrl);
-    } else {
-      window.location.assign(tourUrl);
-    }
-    activeTourTab = null;
-  } catch (error) {
-    if (tourPrefix) {
-      await deleteTour(tourPrefix).catch(() => {});
-    }
-    console.error(error);
-    const message = readableError(error);
-    setProgress(0);
-    setStatus(message, "error");
-    showTourTabError(tourTab, message);
-    setBusy(false);
-    activeTourTab = null;
-  } finally {
-    await zipReader?.close().catch(() => {});
+    const parsed = JSON.parse(localStorage.getItem(GEOCODE_CACHE_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
   }
 }
 
-function openLoadingTab() {
-  const tourTab = window.open("", "_blank");
-  if (!tourTab) {
-    return null;
-  }
-
-  tourTab.document.title = "Opening tour";
-  tourTab.document.body.style.cssText = "margin:0;min-height:100vh;background:#f5f7f8";
-
-  const main = tourTab.document.createElement("main");
-  main.style.cssText =
-    "display:grid;align-content:center;gap:18px;width:min(520px,calc(100% - 40px));min-height:100vh;margin:auto;font:16px system-ui,sans-serif;color:#172026";
-
-  const title = tourTab.document.createElement("h1");
-  title.textContent = "Opening tour";
-  title.style.cssText = "margin:0;font-size:24px;letter-spacing:0";
-
-  const track = tourTab.document.createElement("div");
-  track.style.cssText = "height:12px;overflow:hidden;border-radius:999px;background:#dfe7e9";
-  track.setAttribute("role", "progressbar");
-  track.setAttribute("aria-valuemin", "0");
-  track.setAttribute("aria-valuemax", "100");
-  track.setAttribute("aria-valuenow", "0");
-
-  const fill = tourTab.document.createElement("span");
-  fill.dataset.progressFill = "";
-  fill.style.cssText =
-    "display:block;width:0;height:100%;border-radius:inherit;background:#0f766e;transition:width 160ms ease";
-  track.append(fill);
-
-  const status = tourTab.document.createElement("p");
-  status.dataset.progressStatus = "";
-  status.textContent = "Preparing tour...";
-  status.style.cssText = "margin:0;color:#5f6f7a;overflow-wrap:anywhere";
-
-  main.append(title, track, status);
-  tourTab.document.body.append(main);
-  return tourTab;
+function writeGeocodeCache(cache) {
+  try {
+    localStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(cache));
+  } catch {}
 }
 
-function showTourTabError(tourTab, message) {
-  if (!tourTab || tourTab.closed) {
-    return;
-  }
-
-  tourTab.document.title = "Tour could not open";
-  const heading = tourTab.document.querySelector("h1");
-  const track = tourTab.document.querySelector('[role="progressbar"]');
-  const status = tourTab.document.querySelector("[data-progress-status]");
-  const main = tourTab.document.querySelector("main");
-
-  if (heading) {
-    heading.textContent = "Tour could not open";
-  }
-  if (track) {
-    track.hidden = true;
-  }
-  if (status) {
-    status.textContent = message;
-    status.style.color = "#b42318";
-  }
-  if (main && !main.querySelector("button")) {
-    const recovery = tourTab.document.createElement("p");
-    recovery.textContent = "Free some disk space, close other tabs, or try a smaller or freshly exported ZIP.";
-    recovery.style.cssText = "margin:0;color:#5f6f7a;line-height:1.5";
-
-    const closeButton = tourTab.document.createElement("button");
-    closeButton.type = "button";
-    closeButton.textContent = "Close this tab";
-    closeButton.style.cssText =
-      "min-height:48px;padding:0 20px;border:0;border-radius:6px;color:white;background:#0f766e;font:700 16px system-ui,sans-serif;cursor:pointer";
-    closeButton.addEventListener("click", () => tourTab.close());
-    main.append(recovery, closeButton);
-  }
+function parseCoordinate(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
-async function prepareServiceWorker() {
-  if (!("serviceWorker" in navigator) || !("caches" in window)) {
-    throw new Error("This browser does not support local tour storage.");
-  }
-
-  const workerUrl = new URL("service-worker.js", appBaseUrl);
-  await navigator.serviceWorker.register(workerUrl, { scope: appBaseUrl.pathname });
-  await navigator.serviceWorker.ready;
+function normalizePositiveInteger(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.round(number) : 0;
 }
 
-function findViewerRoot(entries) {
-  const filePaths = entries
-    .filter((entry) => !entry.directory && !shouldSkipEntry(entry.filename))
-    .map((entry) => normalizeEntryPath(entry.filename));
+function normalizeLocationParts(rawTour) {
+  const parts = {
+    street: cleanOptionalString(
+      rawTour.street || rawTour.streetName || rawTour.street_name || rawTour.addressLine1,
+    ),
+    town: cleanOptionalString(rawTour.town || rawTour.neighborhood || rawTour.suburb),
+    city: cleanOptionalString(rawTour.city || rawTour.municipality),
+    state: cleanOptionalString(rawTour.state || rawTour.region),
+    zipcode: cleanOptionalString(rawTour.zipcode || rawTour.zipCode || rawTour.postalCode),
+  };
 
-  const candidates = filePaths
-    .filter((filePath) => filePath === "index.html" || filePath.endsWith("/index.html"))
-    .map((indexPath) => indexPath.slice(0, -"index.html".length))
-    .filter((root) => filePaths.some((filePath) => filePath.startsWith(`${root}html_assets/`)))
-    .sort((a, b) => a.length - b.length);
-
-  if (!candidates.length) {
-    throw new Error("Could not find index.html beside an html_assets folder in this zip.");
+  if (!parts.street) {
+    parts.street = extractStreetFromAddress(cleanOptionalString(rawTour.address));
   }
-  return candidates[0];
+  return parts;
 }
 
-function belongsToViewer(entry, root) {
-  const filePath = normalizeEntryPath(entry.filename);
-  return filePath.startsWith(root) && !shouldSkipEntry(filePath);
-}
-
-function validateViewerEntries(entries, totalBytes) {
-  const files = entries.filter((entry) => !entry.directory && !shouldSkipEntry(entry.filename));
-  if (!files.length || totalBytes <= 0) {
-    throw new Error("This ZIP does not contain any readable tour files.");
+function parseLocationFromGeocodeLabel(label) {
+  const segments = cleanOptionalString(label)
+    .split(",")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  if (segments.length < 4) {
+    return {};
   }
 
-  const oversizedEntry = files.find((entry) => (entry.uncompressedSize || 0) > MAX_SINGLE_FILE_BYTES);
-  if (oversizedEntry) {
-    throw new Error(
-      `${shortName(oversizedEntry.filename)} is too large for reliable in-browser extraction.`,
-    );
+  const country = segments.at(-1);
+  const zipcodeIndex = findZipcodeIndex(segments);
+  const zipcode = zipcodeIndex >= 0 ? segments[zipcodeIndex] : "";
+  const state = zipcodeIndex > 0 ? segments[zipcodeIndex - 1] : "";
+  const city = zipcodeIndex > 2 ? segments[zipcodeIndex - 3] : segments.at(-3) || "";
+  const town = zipcodeIndex > 3 ? segments[zipcodeIndex - 4] : "";
+
+  return {
+    street: buildStreetFromGeocodeSegments(segments),
+    town: town && town !== country ? town : "",
+    city: city && city !== country ? city : "",
+    state,
+    zipcode,
+  };
+}
+
+function findZipcodeIndex(segments) {
+  return segments.findIndex((segment) => /\b\d{5}(?:-\d{4})?\b/.test(segment));
+}
+
+function buildStreetFromGeocodeSegments(segments) {
+  if (segments.length >= 2 && /^\d+[A-Za-z]?$/.test(segments[0])) {
+    return `${segments[0]} ${segments[1]}`;
+  }
+  return segments[0] || "";
+}
+
+function extractStreetFromAddress(address) {
+  return address.split(",")[0]?.trim() || "";
+}
+
+function getStreetTitle(tour) {
+  return tour.locationParts.street || extractStreetFromAddress(tour.address) || tour.title;
+}
+
+function formatLocationDetails(parts) {
+  const items = [parts.town, parts.city, parts.state, parts.zipcode].filter(Boolean);
+  return items.length ? items.join(", ") : "Location details pending";
+}
+
+function updateTourLocationDetails(tour) {
+  const row = cloudTourList.querySelector(`[data-tour-id="${CSS.escape(tour.id)}"]`);
+  const title = row?.querySelector("h3");
+  const location = row?.querySelector("[data-location-details]");
+  if (title) {
+    title.textContent = getStreetTitle(tour);
+  }
+  if (location) {
+    location.textContent = formatLocationDetails(tour.locationParts);
   }
 }
 
-function normalizeEntryPath(filePath) {
-  return filePath.replace(/\\/g, "/").replace(/^\.\//, "");
+function normalizeAddress(address) {
+  return address.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-function shouldSkipEntry(filePath) {
-  const normalized = normalizeEntryPath(filePath);
-  const basename = normalized.split("/").pop();
-  return normalized === "__MACOSX" ||
-    normalized.startsWith("__MACOSX/") ||
-    basename === ".DS_Store" ||
-    basename.startsWith("._");
-}
-
-async function clearStoredTours() {
-  const cache = await caches.open(TOUR_CACHE);
-  const requests = await cache.keys();
-  await Promise.all(requests.map((request) => cache.delete(request)));
-}
-
-async function deleteTour(tourPrefix) {
-  const cache = await caches.open(TOUR_CACHE);
-  const requests = await cache.keys();
-  await Promise.all(
-    requests
-      .filter((request) => request.url.startsWith(tourPrefix.href))
-      .map((request) => cache.delete(request)),
-  );
-}
-
-async function ensureStorageCapacity(requiredBytes) {
-  const estimate = await navigator.storage?.estimate?.();
-  if (!estimate?.quota || estimate.usage == null) {
-    return;
-  }
-
-  const available = Math.max(0, estimate.quota - estimate.usage);
-  const safeRequiredBytes = Math.ceil(requiredBytes * STORAGE_OVERHEAD_RATIO) + STORAGE_RESERVE_BYTES;
-  if (safeRequiredBytes > available) {
-    throw new Error(
-      `This tour needs about ${formatBytes(safeRequiredBytes)} of safe working space, but only ${formatBytes(available)} is available.`,
-    );
-  }
-}
-
-function updateExtractionProgress(completed, total) {
-  const percent = total ? Math.round((completed / total) * 96) : 50;
-  setProgress(Math.max(2, Math.min(98, percent)));
-}
-
-function selectFile(file) {
-  if (file && !file.name.toLowerCase().endsWith(".zip")) {
-    selectedFile = null;
-    processButton.disabled = true;
-    fileName.textContent = file.name;
-    setStatus("Choose a .zip tour export.", "error");
-    setProgress(0);
-    return;
-  }
-
-  selectedFile = file || null;
-  processButton.disabled = !file;
-  fileName.textContent = file ? `${file.name} (${formatBytes(file.size)})` : "or drag the zip file here";
-  setStatus(file ? "Ready to open." : "Waiting for a zip file.");
-  setProgress(0);
-}
-
-function setBusy(isBusy) {
-  processButton.disabled = isBusy || !selectedFile;
-  processButton.textContent = isBusy ? "Unzipping..." : "Open tour";
-}
-
-function setStatus(message, type = "info") {
-  statusText.textContent = message;
-  statusText.classList.toggle("is-error", type === "error");
-  if (activeTourTab && !activeTourTab.closed) {
-    const tabStatus = activeTourTab.document.querySelector("[data-progress-status]");
-    if (tabStatus) {
-      tabStatus.textContent = message;
-      tabStatus.style.color = type === "error" ? "#b42318" : "#5f6f7a";
-    }
-  }
-}
-
-function setProgress(value) {
-  progressFill.style.width = `${value}%`;
-  if (activeTourTab && !activeTourTab.closed) {
-    const tabFill = activeTourTab.document.querySelector("[data-progress-fill]");
-    const tabTrack = tabFill?.parentElement;
-    if (tabFill && tabTrack) {
-      tabFill.style.width = `${value}%`;
-      tabTrack.setAttribute("aria-valuenow", String(Math.round(value)));
-    }
-  }
-}
-
-function createTourId(fileName) {
-  const slug = fileName
-    .replace(/\.zip$/i, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48) || "tour";
-  return `${Date.now()}-${slug}`;
-}
-
-function encodePath(filePath) {
-  return filePath.split("/").map(encodeURIComponent).join("/");
-}
-
-function shortName(filePath) {
-  const name = filePath.split("/").pop() || filePath;
-  return name.length > 48 ? `${name.slice(0, 45)}...` : name;
-}
-
-function readableError(error) {
-  if (error?.name === "QuotaExceededError") {
-    return "The browser ran out of storage. Partial tour files were removed.";
-  }
-  if (error?.name === "RangeError" || /memory|allocation|array buffer/i.test(error?.message || "")) {
-    return "This device ran out of working memory while unzipping the tour. Partial tour files were removed.";
-  }
-  if (/central directory|invalid zip|corrupt|unexpected end|bad signature/i.test(error?.message || "")) {
-    return "This ZIP appears incomplete or damaged. Export or download the tour again and retry.";
-  }
-  if (error?.name === "NotAllowedError" || error?.name === "SecurityError") {
-    return "The browser blocked local tour storage. Allow site storage or use a supported browser.";
-  }
-  return error?.message || "The tour could not be opened.";
-}
-
-function getMimeType(filePath) {
-  const extension = filePath.split(".").pop()?.toLowerCase();
-  return ({
-    css: "text/css",
-    csv: "text/csv",
-    gif: "image/gif",
-    glb: "model/gltf-binary",
-    html: "text/html",
-    ico: "image/x-icon",
-    jpeg: "image/jpeg",
-    jpg: "image/jpeg",
-    js: "text/javascript",
-    json: "application/json",
-    mjs: "text/javascript",
-    mp3: "audio/mpeg",
-    mp4: "video/mp4",
-    pdf: "application/pdf",
-    png: "image/png",
-    svg: "image/svg+xml",
-    txt: "text/plain",
-    wasm: "application/wasm",
-    webm: "video/webm",
-    webp: "image/webp",
-    xml: "application/xml",
-  })[extension] || "application/octet-stream";
+function delay(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }
 
 function cleanRequiredString(value) {
@@ -773,21 +712,6 @@ function cleanUrl(value) {
   } catch {
     return "";
   }
-}
-
-function formatBytes(bytes) {
-  if (!Number.isFinite(bytes) || bytes <= 0) {
-    return "0 B";
-  }
-
-  const units = ["B", "KB", "MB", "GB"];
-  let value = bytes;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-  return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
 function formatDate(value) {

@@ -1,12 +1,12 @@
 {
   "name": "measured-space",
   "version": "1.0.0",
-  "description": "Browser-only app for opening zipped virtual tour exports.",
+  "description": "Authenticated dashboard for assigned cloud-hosted virtual tours.",
   "main": "server.mjs",
   "scripts": {
     "build": "esbuild src/app.js --bundle --format=esm --minify --outfile=public/app.js",
     "start": "node server.mjs",
-    "check": "npm run build && node --check server.mjs && node --check public/service-worker.js && node --check functions/_shared/auth.js && node --check functions/_shared/http.js && node --check functions/api/me.js && node --check functions/api/tours.js && node --check scripts/prepare-tour.mjs && node --check scripts/build-tour-catalog.mjs && node --check scripts/publish-tour-r2.mjs && node --check scripts/check-hosted-tour.mjs && node --check scripts/validate-tour-catalog.mjs && node --check scripts/production-check.mjs && node --check scripts/release-tour.mjs && node --check scripts/lib/dashboard-d1.mjs && node --check scripts/import-tour-to-d1.mjs && node --check scripts/assign-tour.mjs && node --check scripts/list-dashboard-tours.mjs && npm run validate-catalog -- --allow-example",
+    "check": "npm run build && node --check server.mjs && node --check functions/_shared/auth.js && node --check functions/_shared/http.js && node --check functions/api/me.js && node --check functions/api/tours.js && node --check scripts/prepare-tour.mjs && node --check scripts/build-tour-catalog.mjs && node --check scripts/publish-tour-r2.mjs && node --check scripts/check-hosted-tour.mjs && node --check scripts/validate-tour-catalog.mjs && node --check scripts/production-check.mjs && node --check scripts/release-tour.mjs && node --check scripts/lib/dashboard-d1.mjs && node --check scripts/import-tour-to-d1.mjs && node --check scripts/assign-tour.mjs && node --check scripts/list-dashboard-tours.mjs && npm run validate-catalog -- --allow-example",
     "prepare-tour": "node scripts/prepare-tour.mjs",
     "build-tour-catalog": "node scripts/build-tour-catalog.mjs",
     "publish-tour-r2": "node scripts/publish-tour-r2.mjs",

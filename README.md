@@ -1,12 +1,10 @@
-# Measured Space Viewer
+# Measured Space Dashboard
 
-Static viewer shell for opening Measured Space virtual tours either from a local ZIP or from immutable cloud-hosted tour revisions.
+Authenticated dashboard for opening assigned Measured Space virtual tours from immutable cloud-hosted tour revisions.
 
-## Local ZIP Viewing
+## Dashboard App
 
-Local ZIP mode runs entirely in the browser. Choose or drop a tour ZIP, and the app unpacks the files on the user's machine with `@zip.js/zip.js`. The unpacked files are stored in browser Cache Storage and served back through `public/service-worker.js` from `/__tours/...`.
-
-The ZIP is not uploaded to this app or to a backend service. Local mode is useful for private review, field QA, and inspecting exports before publishing them.
+The dashboard loads the signed-in user from `/api/me`, fetches assigned tours from `/api/tours`, and renders a dense operational workspace with tour actions and a property map. The local ZIP viewer has been removed from the browser app; ZIP exports are still handled by the publishing scripts before immutable R2 upload.
 
 ```sh
 npm install
@@ -63,7 +61,13 @@ npx wrangler pages dev public --d1 DB=<database_id> \
   --binding DASHBOARD_DEV_EMAIL=client@example.com
 ```
 
-`npm start` serves the static viewer plus local-only `/api/me` and `/api/tours` shims backed by `public/tours.json`, so dashboard smoke tests can run without Cloudflare. In a pure static host where `/api/*` is unavailable, the browser falls back to a non-production `public/tours.json` preview while local ZIP viewing continues to work.
+`npm start` serves the static dashboard plus local-only `/api/me` and `/api/tours` shims backed by `public/tours.json`, so dashboard smoke tests can run without Cloudflare. In a pure static host where `/api/*` is unavailable, the browser falls back to a non-production `public/tours.json` preview.
+
+## Dashboard Map
+
+The map uses Leaflet with OpenStreetMap tiles and geocodes tour addresses with the public Nominatim API when a tour does not already include coordinates. Geocoded results are cached in `localStorage` and requests are queued at roughly one request per second for light, policy-friendly local/dashboard use.
+
+For production scale, prefer storing latitude/longitude in D1 during import so the dashboard does not need to geocode on every new browser profile.
 
 ## Dashboard API
 
@@ -295,5 +299,5 @@ Rollback is a catalog change. Keep old immutable R2 revision folders in place, u
 - Cloud tour does not open: run `npm run check-hosted-tour -- <index-url>` and confirm the R2 custom domain is reachable.
 - Updates do not appear: `tours.json` may still be inside its short cache window. Purge or wait for revalidation.
 - Assets are stale: do not overwrite revision folders. Publish a new revision and update `tours.json`.
-- Local ZIP fails: confirm the ZIP contains `index.html` beside `html_assets/`, and that browser storage has enough free disk space.
+- Map is empty: confirm tours have full addresses, or add latitude/longitude during D1 import.
 - Production deploy fails on catalog validation: replace placeholder domains and rerun `npm run production-check`.
