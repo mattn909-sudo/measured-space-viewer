@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 export const DEFAULT_DATABASE = "measured-space-dashboard";
+const BOOLEAN_OPTIONS = new Set(["allow-example", "help", "local", "remote"]);
 
 export function parseArgs(args) {
   const positional = [];
@@ -13,7 +14,7 @@ export function parseArgs(args) {
     }
 
     const key = arg.slice(2);
-    if (key === "help" || key === "remote" || key === "local") {
+    if (BOOLEAN_OPTIONS.has(key)) {
       options[key] = true;
       continue;
     }
@@ -28,12 +29,24 @@ export function parseArgs(args) {
   return { positional, options };
 }
 
+export function getDatabaseOptions(options = {}) {
+  if (options.local && options.remote) {
+    throw new Error("Use either --local or --remote, not both.");
+  }
+
+  return {
+    database: options.database,
+    local: !options.remote,
+    remote: Boolean(options.remote),
+  };
+}
+
 export function wranglerD1Execute(sql, options = {}) {
   const database = options.database || DEFAULT_DATABASE;
   const args = ["wrangler", "d1", "execute", database, "--command", sql];
   if (options.remote) {
     args.push("--remote");
-  } else if (options.local) {
+  } else {
     args.push("--local");
   }
   if (options.json) {
@@ -98,11 +111,19 @@ export function normalizeEmail(value) {
 }
 
 export function normalizeRole(value) {
-  const role = cleanString(value) || "viewer";
+  const role = cleanString(value).toLowerCase() || "viewer";
   if (!["viewer", "manager", "owner"].includes(role)) {
     throw new Error("--role must be viewer, manager, or owner.");
   }
   return role;
+}
+
+export function normalizeRequiredString(value, label) {
+  const text = cleanString(value);
+  if (!text) {
+    throw new Error(`${label} is required.`);
+  }
+  return text;
 }
 
 export function cleanString(value) {

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import crypto from "node:crypto";
 
 import {
-  cleanString,
+  getDatabaseOptions,
   normalizeEmail,
   normalizeRole,
   parseArgs,
@@ -12,6 +12,7 @@ import {
   sqlNumber,
   wranglerD1Execute,
 } from "./lib/dashboard-d1.mjs";
+import { validateCatalogEntry } from "./lib/tour-catalog-validation.mjs";
 
 main().catch((error) => {
   console.error(error.message);
@@ -28,27 +29,33 @@ async function main() {
 
   const manifestPath = positional[0];
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  const tour = validateManifestEntry(manifest);
+  const { entry: tour, errors } = validateCatalogEntry(manifest, {
+    allowExample: Boolean(options["allow-example"]),
+    label: manifestPath,
+  });
+  if (errors.length || !tour) {
+    throw new Error(`Manifest entry is not valid:\n${errors.map((error) => `- ${error}`).join("\n")}`);
+  }
+
   const email = normalizeEmail(options.email);
   const role = normalizeRole(options.role);
   const userId = stableId("usr", email);
-  const databaseOptions = {
-    database: options.database,
-    remote: Boolean(options.remote),
-    local: Boolean(options.local),
-  };
+  const databaseOptions = getDatabaseOptions(options);
+  const targetTourId = getTargetTourId(tour, databaseOptions);
 
   wranglerD1Execute(
     `INSERT INTO users (id, email, updated_at)
 VALUES (${sqlLiteral(userId)}, ${sqlLiteral(email)}, ${nowSql()})
-ON CONFLICT(email) DO UPDATE SET updated_at = ${nowSql()};
+ON CONFLICT(email) DO UPDATE SET
+  email = excluded.email,
+  updated_at = ${nowSql()};
 
 INSERT INTO tours (
   id, slug, revision_id, title, address, description, cover_image,
   index_url, asset_base_url, published_at, status, size_bytes, file_count, updated_at
 )
 VALUES (
-  ${sqlLiteral(tour.id)}, ${sqlLiteral(tour.slug)}, ${sqlLiteral(tour.revisionId)},
+  ${sqlLiteral(targetTourId)}, ${sqlLiteral(tour.slug)}, ${sqlLiteral(tour.revisionId)},
   ${sqlLiteral(tour.title)}, ${sqlLiteral(tour.address)}, ${sqlLiteral(tour.description)},
   ${sqlLiteral(tour.coverImage)}, ${sqlLiteral(tour.indexUrl)}, ${sqlLiteral(tour.assetBaseUrl)},
   ${sqlLiteral(tour.publishedAt)}, ${sqlLiteral(tour.status)}, ${sqlNumber(tour.sizeBytes)},
@@ -72,7 +79,7 @@ ON CONFLICT(id) DO UPDATE SET
 INSERT INTO user_tours (user_id, tour_id, role)
 VALUES (
   (SELECT id FROM users WHERE lower(email) = lower(${sqlLiteral(email)})),
-  ${sqlLiteral(tour.id)},
+  ${sqlLiteral(targetTourId)},
   ${sqlLiteral(role)}
 )
 ON CONFLICT(user_id, tour_id) DO UPDATE SET role = excluded.role;`,
@@ -86,87 +93,43 @@ FROM user_tours
 INNER JOIN users ON users.id = user_tours.user_id
 INNER JOIN tours ON tours.id = user_tours.tour_id
 WHERE lower(users.email) = lower(${sqlLiteral(email)})
-  AND tours.id = ${sqlLiteral(tour.id)};`,
+  AND tours.id = ${sqlLiteral(targetTourId)};`,
       { ...databaseOptions, json: true },
     ),
   );
 
-  console.log(`Imported ${tour.id} (${tour.revisionId}) and assigned ${email} as ${role}.`);
+  console.log(`Imported ${targetTourId} (${tour.revisionId}) and assigned ${email} as ${role}.`);
   if (rows.length) {
     console.table(rows);
   }
 }
 
-function validateManifestEntry(raw) {
-  if (!raw || typeof raw !== "object" || raw.status !== "published") {
-    throw new Error("Manifest entry must be an object with status \"published\".");
+function getTargetTourId(tour, databaseOptions) {
+  const rows = readJsonRows(
+    wranglerD1Execute(
+      `SELECT id, slug, revision_id
+FROM tours
+WHERE id = ${sqlLiteral(tour.id)}
+   OR (slug = ${sqlLiteral(tour.slug)} AND revision_id = ${sqlLiteral(tour.revisionId)});`,
+      { ...databaseOptions, json: true },
+    ),
+  );
+  const ids = new Set(rows.map((row) => row.id));
+  if (ids.size > 1) {
+    throw new Error(
+      `D1 already has conflicting tour rows for id "${tour.id}" and revision "${tour.slug}/${tour.revisionId}".`,
+    );
   }
 
-  const entry = {
-    id: requiredString(raw.id, "id"),
-    slug: requiredString(raw.slug, "slug"),
-    revisionId: requiredString(raw.revisionId, "revisionId"),
-    title: requiredString(raw.title, "title"),
-    address: cleanString(raw.address),
-    description: cleanString(raw.description),
-    coverImage: cleanHttpUrl(raw.coverImage, "coverImage", false),
-    indexUrl: cleanHttpUrl(raw.indexUrl, "indexUrl", true),
-    assetBaseUrl: cleanHttpUrl(raw.assetBaseUrl, "assetBaseUrl", true),
-    publishedAt: requiredString(raw.publishedAt, "publishedAt"),
-    status: "published",
-    sizeBytes: normalizeNonNegativeNumber(raw.sizeBytes, "sizeBytes"),
-    fileCount: normalizeNonNegativeNumber(raw.fileCount, "fileCount"),
-  };
+  const existingId = rows[0]?.id;
+  if (existingId && existingId !== tour.id) {
+    console.warn(
+      `Found existing D1 tour id "${existingId}" for ${tour.slug}/${tour.revisionId}; updating that row instead of changing its primary key to "${tour.id}".`,
+    );
+    return existingId;
+  }
 
-  if (Number.isNaN(new Date(entry.publishedAt).getTime())) {
-    throw new Error("publishedAt must be an ISO-compatible date.");
-  }
-  if (!entry.indexUrl.startsWith(entry.assetBaseUrl)) {
-    throw new Error("indexUrl must live under assetBaseUrl.");
-  }
-  if (!new URL(entry.indexUrl).pathname.endsWith("/index.html")) {
-    throw new Error("indexUrl should point to an index.html file.");
-  }
-  return entry;
-}
-
-function requiredString(value, field) {
-  const text = cleanString(value);
-  if (!text) {
-    throw new Error(`${field} is required.`);
-  }
-  return text;
-}
-
-function cleanHttpUrl(value, field, required) {
-  const text = cleanString(value);
-  if (!text) {
-    if (required) {
-      throw new Error(`${field} is required.`);
-    }
-    return "";
-  }
-  let url;
-  try {
-    url = new URL(text);
-  } catch {
-    throw new Error(`${field} must be a valid URL.`);
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error(`${field} must be an http/https URL.`);
-  }
-  if (/\.zip(?:$|[?#])/i.test(url.href)) {
-    throw new Error(`${field} must not point at a ZIP file.`);
-  }
-  return url.href;
-}
-
-function normalizeNonNegativeNumber(value, field) {
-  const number = Number(value);
-  if (!Number.isFinite(number) || number < 0) {
-    throw new Error(`${field} must be a non-negative number.`);
-  }
-  return Math.round(number);
+  return tour.id;
 }
 
 function stableId(prefix, value) {
@@ -179,6 +142,6 @@ function nowSql() {
 
 function printUsage() {
   console.log(
-    "Usage: node scripts/import-tour-to-d1.mjs <manifest-entry.json> --email client@example.com [--role viewer] [--database measured-space-dashboard] [--remote]",
+    "Usage: node scripts/import-tour-to-d1.mjs <manifest-entry.json> --email client@example.com [--role viewer] [--database measured-space-dashboard] [--local|--remote] [--allow-example]",
   );
 }

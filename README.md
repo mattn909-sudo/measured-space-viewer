@@ -78,13 +78,17 @@ Production API requests require Cloudflare Access identity from `Cf-Access-Authe
 
 ## Dashboard Tour Operations
 
-Import one prepared manifest entry, upsert its tour row, and assign it to a user:
+The D1 operation scripts default to local D1 (`--local`). Pass `--remote` only when you intend to modify the Cloudflare-hosted database. Each script prints the exact `npx wrangler d1 execute ...` command it runs plus Wrangler output/result tables. These scripts update D1 metadata only; they do not require R2 credentials, upload files, or overwrite immutable R2 revision folders.
+
+Import one prepared manifest entry, upsert its tour row, and assign it to a lowercase user email:
 
 ```sh
 npm run import-tour-to-d1 -- dist/tours/255-slade/<revisionId>.manifest-entry.json \
   --email client@example.com \
   --role viewer
 ```
+
+The import uses the same production-safety checks as `npm run validate-catalog`: `published` status, required IDs/title/revision, valid `http`/`https` URLs, `index.html` URLs under `assetBaseUrl`, no ZIP URLs, no `r2.dev`, and no placeholder `example.com` domains unless you explicitly pass `--allow-example` for local sample data. Tours are matched by `id` or by the existing `slug` + `revisionId` row before upsert.
 
 Assign an already-imported tour to another user:
 
@@ -98,7 +102,17 @@ List D1 dashboard tours and assignments:
 npm run list-dashboard-tours
 ```
 
-Add `-- --remote` to these scripts when you intend to modify the remote D1 database. The scripts use Wrangler and do not require R2 credentials. They update D1 metadata only; they do not upload files or overwrite immutable R2 revision folders.
+Remote examples:
+
+```sh
+npm run import-tour-to-d1 -- dist/tours/255-slade/<revisionId>.manifest-entry.json \
+  --email client@example.com \
+  --role viewer \
+  --remote
+
+npm run assign-tour -- --tour-id 255-slade --email other@example.com --role viewer --remote
+npm run list-dashboard-tours -- --remote
+```
 
 ## Where Large Tours Live
 

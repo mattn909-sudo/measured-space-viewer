@@ -2,7 +2,9 @@
 import crypto from "node:crypto";
 
 import {
+  getDatabaseOptions,
   normalizeEmail,
+  normalizeRequiredString,
   normalizeRole,
   parseArgs,
   readJsonRows,
@@ -15,7 +17,7 @@ main().catch((error) => {
   process.exitCode = 1;
 });
 
-function main() {
+async function main() {
   const { options } = parseArgs(process.argv.slice(2));
   if (options.help || !options["tour-id"] || !options.email) {
     printUsage();
@@ -23,15 +25,11 @@ function main() {
     return;
   }
 
-  const tourId = options["tour-id"].trim();
+  const tourId = normalizeRequiredString(options["tour-id"], "--tour-id");
   const email = normalizeEmail(options.email);
   const role = normalizeRole(options.role);
   const userId = stableId("usr", email);
-  const databaseOptions = {
-    database: options.database,
-    remote: Boolean(options.remote),
-    local: Boolean(options.local),
-  };
+  const databaseOptions = getDatabaseOptions(options);
 
   const existingTour = readJsonRows(
     wranglerD1Execute(`SELECT id, title, revision_id FROM tours WHERE id = ${sqlLiteral(tourId)};`, {
@@ -46,7 +44,9 @@ function main() {
   wranglerD1Execute(
     `INSERT INTO users (id, email, updated_at)
 VALUES (${sqlLiteral(userId)}, ${sqlLiteral(email)}, ${nowSql()})
-ON CONFLICT(email) DO UPDATE SET updated_at = ${nowSql()};
+ON CONFLICT(email) DO UPDATE SET
+  email = excluded.email,
+  updated_at = ${nowSql()};
 
 INSERT INTO user_tours (user_id, tour_id, role)
 VALUES (
@@ -84,6 +84,6 @@ function nowSql() {
 
 function printUsage() {
   console.log(
-    "Usage: node scripts/assign-tour.mjs --tour-id 255-slade --email client@example.com [--role viewer] [--database measured-space-dashboard] [--remote]",
+    "Usage: node scripts/assign-tour.mjs --tour-id 255-slade --email client@example.com [--role viewer] [--database measured-space-dashboard] [--local|--remote]",
   );
 }
