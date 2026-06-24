@@ -61,7 +61,7 @@ npx wrangler pages dev public --d1 DB=<database_id> \
   --binding DASHBOARD_DEV_EMAIL=client@example.com
 ```
 
-`npm start` serves the static dashboard plus local-only `/api/me` and `/api/tours` shims backed by `public/tours.json`, so dashboard smoke tests can run without Cloudflare. In a pure static host where `/api/*` is unavailable, the browser falls back to a non-production `public/tours.json` preview.
+`npm start` serves the static dashboard plus local-only `/api/me` and `/api/tours` shims backed by `public/tours.json`, so dashboard smoke tests can run without Cloudflare. The shim only creates a development identity when `NODE_ENV` is not `production` or `DASHBOARD_DEV_AUTH=true`; set `DASHBOARD_DEV_EMAIL` and `DASHBOARD_DEV_NAME` to preview a specific user. In a pure static host where `/api/*` is unavailable, the browser falls back to a non-production `public/tours.json` preview.
 
 ## Dashboard Map
 
@@ -74,7 +74,7 @@ For production scale, prefer storing latitude/longitude in D1 during import so t
 - `GET /api/me` returns the Cloudflare Access identity as `{ email, name, source }`.
 - `GET /api/tours` returns `{ user, tours }` for tours assigned to the authenticated email.
 
-Production API requests require Cloudflare Access identity from `Cf-Access-Authenticated-User-Email` or `Cf-Access-Jwt-Assertion`. The app does not accept a client-submitted email for authorization. Local fallback identity is only enabled when `NODE_ENV` is not `production` or `DASHBOARD_DEV_AUTH=true`.
+Production API requests require Cloudflare Access identity from `Cf-Access-Authenticated-User-Email` or `Cf-Access-Jwt-Assertion`. The app does not accept a client-submitted email for authorization. If `CLOUDFLARE_ACCESS_TEAM_DOMAIN` and `CLOUDFLARE_ACCESS_AUD` are configured, Pages Functions verify the signed Access JWT before using its email claim. Local fallback identity is only enabled when `NODE_ENV` is not `production` or `DASHBOARD_DEV_AUTH=true`.
 
 ## Dashboard Tour Operations
 
@@ -191,17 +191,41 @@ Remove `--dry-run` to upload. Never commit secrets. Versioned tour files are upl
 
 ## Cloudflare Access Setup
 
-Create a Cloudflare Access self-hosted application for the dashboard hostname, for example `dashboard.measured-space.com`.
+Create a Cloudflare Access self-hosted application for the dashboard hostname before exposing production data.
 
-Recommended policy shape:
+1. In Cloudflare Zero Trust, open **Access > Applications** and add a **Self-hosted** application.
+2. Name it `Measured Space Dashboard`.
+3. Set the application domain to `dashboard.measured-space.com` and protect all paths, including `/api/*`.
+4. Choose the identity provider clients should use.
+5. Add at least one Allow policy for the client emails or identity-provider groups that should see the dashboard.
+6. Copy the application's AUD tag from the Access application details.
+7. In the Cloudflare Pages project, add these production variables to enable JWT verification in the Functions:
 
-- Include: the specific client emails, email domains, or identity-provider groups that should be allowed to sign in.
-- Require: any organization requirements such as MFA or IdP group membership.
-- Exclude: users or groups that should never access the dashboard.
+```text
+CLOUDFLARE_ACCESS_TEAM_DOMAIN=https://<team-name>.cloudflareaccess.com
+CLOUDFLARE_ACCESS_AUD=<Access application AUD tag>
+```
 
-Do not add a custom password login to this app. Cloudflare Access should handle sign-in, session cookies, and identity. After Access authenticates a request, Pages Functions read the user from `Cf-Access-Authenticated-User-Email` when present, or from the `Cf-Access-Jwt-Assertion` JWT payload. Browsers may also carry the `CF_Authorization` cookie as part of the Access session.
+These values are not application passwords, but keep them in Cloudflare Pages environment variables so deployment config stays environment-specific. Do not commit service tokens, API tokens, IdP secrets, or client-specific private notes.
 
-For a stricter origin-auth posture, add full JWT signature verification in the Pages Function using your Access team domain and the application AUD tag. The current implementation assumes the dashboard hostname is protected by Access and rejects production requests that do not include Access identity.
+Required policy examples:
+
+- Client email allowlist: Action `Allow`; Include `Emails` with `client@example.com` and `owner@example.com`; Require your organization MFA or approved IdP; Exclude former users who should never access the dashboard.
+- Client company group: Action `Allow`; Include an IdP group such as `Measured Space - Client A`; Require email domain `client-a.example`; Exclude suspended or offboarded groups.
+- Internal operator access: Action `Allow`; Include a small internal admin group; Require stronger posture such as MFA, managed device, or your IdP's high-assurance group.
+
+Keep Access policy membership and D1 tour assignment separate. Access decides who can reach `dashboard.measured-space.com`; D1 decides which authenticated email can see each tour inside the dashboard.
+
+Do not add a custom password login to this app. Cloudflare Access handles sign-in, session cookies, and identity. After Access authenticates a request, Pages Functions read the user from the signed `Cf-Access-Jwt-Assertion` JWT when verification variables are configured, then fall back to `Cf-Access-Authenticated-User-Email` for simpler Access-protected deployments. Browsers may also carry the `CF_Authorization` cookie as part of the Access session, but the Functions do not use that cookie as client input for authorization. Cloudflare recommends validating the `Cf-Access-Jwt-Assertion` header because the cookie is browser/session transport and is not guaranteed on every request.
+
+Local development fallback:
+
+- `npm start` uses the local Express shim. With the default non-production `NODE_ENV`, `/api/me` returns `DASHBOARD_DEV_EMAIL` or `dev@example.com`, and `/api/tours` returns local preview data unless `DASHBOARD_REMOTE_D1=true` is set.
+- `npx wrangler pages dev` should be run with `--binding NODE_ENV=development` and, when needed, `--binding DASHBOARD_DEV_AUTH=true --binding DASHBOARD_DEV_EMAIL=client@example.com`.
+- `X-Dev-User-Email` is only honored when development auth is enabled. A production request with only that header is rejected.
+- Do not set `DASHBOARD_DEV_AUTH=true` in the production Pages environment. Missing or invalid Access identity returns `401` from `/api/me` and `/api/tours`.
+
+References: Cloudflare documents the [Access application token](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/application-token/) and the [JWT validation flow](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/) for the `Cf-Access-Jwt-Assertion` header and `CF_Authorization` cookie.
 
 ## Private Direct Tour URLs
 

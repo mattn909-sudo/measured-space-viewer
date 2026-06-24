@@ -2,7 +2,7 @@ import { getAuthenticatedUser } from "../_shared/auth.js";
 import { errorResponse, jsonResponse } from "../_shared/http.js";
 
 export async function onRequestGet({ request, env }) {
-  const user = getAuthenticatedUser(request, env);
+  const user = await getAuthenticatedUser(request, env);
   if (!user) {
     return errorResponse("Cloudflare Access identity is required.", 401);
   }
